@@ -1,9 +1,7 @@
 -module('nats_msg').
 -author("Yuce Tekol").
 
-%% API exports
 -export([encode/1,
-         decode/1,
          info/1,
          connect/1,
          pub/1,
@@ -23,7 +21,7 @@
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
 
-%% == API functions
+%% == API
 
 -spec info(Info :: map()) -> binary().
 info(Info) ->
@@ -85,7 +83,7 @@ msg(Subject, Sid, ReplyTo, Payload) ->
         <<>> -> [Subject, Sid, integer_to_binary(byte_size(Payload))];
         _ -> [Subject, Sid, ReplyTo, integer_to_binary(byte_size(Payload))]
     end,
-    encode({msg, Params, Payload}).    
+    encode({msg, Params, Payload}).
 
 msg(Subject, Sid, Payload) ->
     msg(Subject, Sid, <<>>, Payload).
@@ -126,11 +124,6 @@ err(ErrMsg) ->
 encode({Name, Params, Payload}) ->
     Encoded = encode_message(Name, Params, Payload),
     iolist_to_binary(Encoded).
-
--spec decode(Message :: binary()) ->
-    [{Name ::atom(), Params :: [binary()], Payload :: binary()}].
-decode(Message) ->
-    [].
 
 %% == Internal
 
@@ -227,7 +220,7 @@ sub_3_test() ->
 unsub_1_test() ->
     R = unsub(<<"1">>),
     E = <<"UNSUB 1\r\n">>,
-    ?assertEqual(E, R).    
+    ?assertEqual(E, R).
 
 unsub_2_test() ->
     R = unsub(<<"1">>, 10),
