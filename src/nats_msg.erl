@@ -1,4 +1,4 @@
--module('nats_msg').
+-module(nats_msg).
 -author("Yuce Tekol").
 
 -export([encode/1,
@@ -21,7 +21,7 @@
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
 
-%% == API
+%% == Encode API
 
 -spec info(Info :: map()) -> binary().
 info(Info) ->
@@ -118,8 +118,13 @@ err(max_payload) ->
 err(ErrMsg) ->
     encode({err, [ErrMsg], undefined}).
 
--spec encode({Name :: atom(),  Params :: [binary()], Payload :: binary()}) ->
+-spec encode({Name :: atom() | binary(),
+              Params :: [binary()],
+              Payload :: binary()}) ->
     Message :: binary().
+
+encode({Name, Params, Payload}) when is_atom(Name) ->
+    encode({name_to_binary(Name), Params, Payload});
 
 encode({Name, Params, Payload}) ->
     Encoded = encode_message(Name, Params, Payload),
@@ -139,7 +144,7 @@ name_to_binary(ok) -> <<"+OK">>;
 name_to_binary(err) -> <<"-ERR">>.
 
 encode_message(Name, Params, Payload) ->
-    R1 = [name_to_binary(Name)],
+    R1 = [Name],
     RevParams = lists:reverse(Params),
     R2 = case RevParams of
         [] -> R1;
