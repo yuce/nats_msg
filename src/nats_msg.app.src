@@ -1,0 +1,15 @@
+{application, 'nats_msg',
+ [{description, "NATS Protocol Message Parser"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {contributors, []},
+  {licenses, []},
+  {links, []}
+ ]}.
