@@ -2,23 +2,23 @@
 -author("Yuce Tekol").
 
 -export([encode/1,
+         encode/3,
+         decode/1]).
+
+-export([ping/0,
+         pong/0,
+         ok/0,
+         err/1,
          info/1,
          connect/1,
          pub/1,
-         pub/2,
          pub/3,
          sub/2,
          sub/3,
-         msg/3,
-         msg/4,
          unsub/1,
          unsub/2,
-         ping/0,
-         pong/0,
-         ok/0,
-         err/1]).
-
--export([decode/1]).
+         msg/2,
+         msg/4]).
 
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
@@ -26,113 +26,108 @@
 
 %% == Encode API
 
--spec info(Info :: map()) -> binary().
-info(Info) ->
-    BinInfo = jsx:encode(Info),
-    encode({info, [BinInfo], undefined}).
+ping() -> encode(ping).
+pong() -> encode(pong).
+ok() -> encode(ok).
+err(Msg) -> encode({err, Msg}).
+info(Info) -> encode({info, Info}).
+connect(Info) -> encode({connect, Info}).
 
--spec connect(Info :: map()) -> binary().
-connect(Info) ->
-    BinInfo = jsx:encode(Info),
-    encode({connect, [BinInfo], undefined}).
-
--spec pub(Subject :: binary(), ReplyTo :: binary(), Payload :: binary()) ->
-    binary().
+pub(Subject) -> encode({pub, {Subject, undefined, 0}, <<>>}).
 pub(Subject, ReplyTo, Payload) ->
+    encode({pub, {Subject, ReplyTo, byte_size(Payload)}, Payload}).
+
+sub(Subject, Sid) -> encode({sub, {Subject, undefined, Sid}}).
+sub(Subject, QueueGrp, Sid) -> encode({sub, {Subject, QueueGrp, Sid}}).
+
+unsub(Sid) -> encode({unsub, {Sid, undefined}}).
+unsub(Sid, MaxMsg) -> encode({unsub, {Sid, MaxMsg}}).
+
+msg(Subject, Sid) ->
+    encode({msg, {Subject, Sid, undefined, 0}, <<>>}).
+msg(Subject, Sid, ReplyTo, Payload) ->
+    encode({msg, {Subject, Sid, ReplyTo, byte_size(Payload)}, Payload}).
+
+encode(ping) -> encode(ping, [], undefined);
+encode(pong) -> encode(pong, [], undefined);
+encode(ok) -> encode(ok, [], undefined);
+
+encode({err, unknown_protocol}) ->
+    encode(err, [<<"'Unknown Protocol Operation'">>], undefined);
+
+encode({err, auth_violation}) ->
+    encode(err, [<<"'Authorization Violation'">>], undefined);
+
+encode({err, auth_timeout}) ->
+    encode(err, [<<"'Authorization Timeout'">>], undefined);
+
+encode({err, parser_error}) ->
+    encode(err, [<<"'Parser Error'">>], undefined);
+
+encode({err, stale_connection}) ->
+    encode(err, [<<"'Stale Connection'">>], undefined);
+
+encode({err, slow_consumer}) ->
+    encode(err, [<<"'Slow Consumer'">>], undefined);
+
+encode({err, max_payload}) ->
+    encode(err, [<<"'Maximum Payload Exceeded'">>], undefined);
+
+encode({err, invalid_subject}) ->
+    encode(err, [<<"'Invalid Subject'">>], undefined);
+
+encode({err, ErrMsg}) ->
+    encode(err, [ErrMsg], undefined);
+
+encode({info, Info}) ->
+    BinInfo = jsx:encode(Info),
+    encode(info, [BinInfo], undefined);
+
+encode({connect, Info}) ->
+    BinInfo = jsx:encode(Info),
+    encode(connect, [BinInfo], undefined);
+
+encode({pub, {Subject, ReplyTo, Bytes}, Payload}) ->
     Params = case ReplyTo of
-        <<>> -> [Subject, integer_to_binary(byte_size(Payload))];
-        _ -> [Subject, ReplyTo, integer_to_binary(byte_size(Payload))]
+        undefined -> [Subject, integer_to_binary(Bytes)];
+        _ -> [Subject, ReplyTo, integer_to_binary(Bytes)]
     end,
-    encode({pub, Params, Payload}).
+    encode(pub, Params, Payload);
 
-pub(Subject) ->
-    pub(Subject, <<>>).
-
-pub(Subject, Payload) ->
-    pub(Subject, <<>>, Payload).
-
--spec sub(Subject :: binary(), QueueGrp :: binary(), Sid :: binary()) ->
-    binary().
-sub(Subject, QueueGrp, Sid) ->
+encode({sub, {Subject, QueueGrp, Sid}}) ->
     Params = case QueueGrp of
-        <<>> ->
+        undefined ->
             [Subject, Sid];
         _ ->
             [Subject, QueueGrp, Sid]
     end,
-    encode({sub, Params, undefined}).
+    encode(sub, Params, undefined);
 
-sub(Subject, Sid) ->
-    sub(Subject, <<>>, Sid).
-
--spec unsub(Subject :: binary(), MaxMsg :: integer()) ->
-    binary().
-unsub(Subject, MaxMsg) ->
+encode({unsub, {Subject, MaxMsg}}) ->
     Params = case MaxMsg of
-        0 ->
+        undefined ->
             [Subject];
         M when M > 0 ->
             [Subject, integer_to_binary(M)]
     end,
-    encode({unsub, Params, undefined}).
+    encode(unsub, Params, undefined);
 
-unsub(Subject) ->
-    unsub(Subject, 0).
-
--spec msg(Subject :: binary(), Sid :: binary(), ReplyTo :: binary(), Payload :: binary()) ->
-    binary().
-msg(Subject, Sid, ReplyTo, Payload) ->
+encode({msg, {Subject, Sid, ReplyTo, Bytes}, Payload}) ->
     Params = case ReplyTo of
-        <<>> -> [Subject, Sid, integer_to_binary(byte_size(Payload))];
-        _ -> [Subject, Sid, ReplyTo, integer_to_binary(byte_size(Payload))]
+        undefined -> [Subject, Sid, integer_to_binary(Bytes)];
+        _ -> [Subject, Sid, ReplyTo, integer_to_binary(Bytes)]
     end,
-    encode({msg, Params, Payload}).
+    encode(msg, Params, Payload).
 
-msg(Subject, Sid, Payload) ->
-    msg(Subject, Sid, <<>>, Payload).
-
-ping() -> encode({ping, [], undefined}).
-pong() -> encode({pong, [], undefined}).
-ok() -> encode({ok, [], undefined}).
-
--spec err(ErrMsg :: binary()) -> binary().
-
-err(unknown_protocol) ->
-    err(<<"'Unknown Protocol Operation'">>);
-
-err(auth_violation) ->
-    err(<<"'Authorization Violation'">>);
-
-err(auth_timeout) ->
-    err(<<"'Authorization Timeout'">>);
-
-err(parser_error) ->
-    err(<<"'Parser Error'">>);
-
-err(stale_connection) ->
-    err(<<"'Stale Connection'">>);
-
-err(slow_consumer) ->
-    err(<<"'Slow Consumer'">>);
-
-err(max_payload) ->
-    err(<<"'Maximum Payload Exceeded'">>);
-
-err(invalid_subject) ->
-    err(<<"'Invalid Subject'">>);
-
-err(ErrMsg) ->
-    encode({err, [ErrMsg], undefined}).
-
--spec encode({Name :: atom() | binary(),
+-spec encode(Name :: atom() | binary(),
               Params :: [binary()],
-              Payload :: binary()}) ->
+              Payload :: binary()) ->
     Message :: binary().
 
-encode({Name, Params, Payload}) when is_atom(Name) ->
-    encode({name_to_bin(Name), Params, Payload});
+encode(Name, Params, Payload) when is_atom(Name) ->
+    encode(name_to_bin(Name), Params, Payload);
 
-encode({Name, Params, Payload}) ->
+encode(Name, Params, Payload) ->
     Encoded = encode_message(Name, Params, Payload),
     iolist_to_binary(Encoded).
 
@@ -219,17 +214,27 @@ make_msg(err, Rest) ->
     {{err, err_to_atom(Rest)}, false};
 
 make_msg(sub, Rest) ->
-    Params = binary:split(Rest, ?SEPLIST, [global, trim_all]),
-    {{sub, list_to_tuple(Params)}, false};
+    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+        [Subject, Sid] ->
+            {Subject, undefined, Sid};
+        [Subject, QueueGrp, Sid] ->
+            {Subject, QueueGrp, Sid}
+    end,
+    {{sub, Params}, false};
 
 make_msg(pub, Rest) ->
-    Params = binary:split(Rest, ?SEPLIST, [global, trim_all]),
-    {{pub, list_to_tuple(Params), <<>>}, true};
+    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+        [Subject, Bytes] ->
+            {Subject, undefined, binary_to_integer(Bytes)};
+        [Subject, ReplyTo, Bytes] ->
+            {Subject, ReplyTo, binary_to_integer(Bytes)}
+    end,
+    {{pub, Params, <<>>}, true};
 
 make_msg(msg, Rest) ->
     Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
         [Subject, Sid, BinBytes] ->
-            {Subject, Sid, binary_to_integer(BinBytes)};
+            {Subject, Sid, undefined, binary_to_integer(BinBytes)};
         [Subject, Sid, ReplyTo, BinBytes] ->
             {Subject, Sid, ReplyTo, binary_to_integer(BinBytes)}
     end,
@@ -238,7 +243,7 @@ make_msg(msg, Rest) ->
 make_msg(unsub, Rest) ->
     Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
         [Subject] ->
-            {Subject};
+            {Subject, undefined};
         [Subject, BinMaxMsg] ->
             {Subject, binary_to_integer(BinMaxMsg)}
     end,
@@ -308,11 +313,6 @@ pub_1_test() ->
     E = <<"PUB NOTIFY 0\r\n\r\n">>,
     ?assertEqual(E, R).
 
-pub_2_test() ->
-    R = pub(<<"FOO">>, <<"Hello NATS!">>),
-    E = <<"PUB FOO 11\r\nHello NATS!\r\n">>,
-    ?assertEqual(E, R).
-
 pub_3_test() ->
     R = pub(<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"Knock Knock">>),
     E = <<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>,
@@ -336,11 +336,6 @@ unsub_1_test() ->
 unsub_2_test() ->
     R = unsub(<<"1">>, 10),
     E = <<"UNSUB 1 10\r\n">>,
-    ?assertEqual(E, R).
-
-msg_3_test() ->
-    R = msg(<<"FOO.BAR">>, <<"9">>, <<"Hello, World!">>),
-    E = <<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>,
     ?assertEqual(E, R).
 
 msg_4_test() ->
@@ -384,22 +379,22 @@ dec_connect_test() ->
 
 dec_pub_1_test() ->
     [R] = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
-    E = {pub, {<<"NOTIFY">>, <<"0">>}, <<>>},
+    E = {pub, {<<"NOTIFY">>, undefined, 0}, <<>>},
     ?assertEqual(E, R).
 
 dec_pub_2_test() ->
     [R] = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
-    E = {pub, {<<"FOO">>, <<"11">>}, <<"Hello NATS!">>},
+    E = {pub, {<<"FOO">>, undefined, 11}, <<"Hello NATS!">>},
     ?assertEqual(E, R).
 
 dec_pub_3_test() ->
     [R] = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
-    E = {pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"11">>}, <<"Knock Knock">>},
+    E = {pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, 11}, <<"Knock Knock">>},
     ?assertEqual(E, R).
 
 dec_sub_2_test() ->
     [R] = decode(<<"SUB FOO 1\r\n">>),
-    E = {sub, {<<"FOO">>, <<"1">>}},
+    E = {sub, {<<"FOO">>, undefined, <<"1">>}},
     ?assertEqual(E, R).
 
 dec_sub_3_test() ->
@@ -409,7 +404,7 @@ dec_sub_3_test() ->
 
 dec_unsub_1_test() ->
     [R] = decode(<<"UNSUB 1\r\n">>),
-    E = {unsub, {<<"1">>}},
+    E = {unsub, {<<"1">>, undefined}},
     ?assertEqual(E, R).
 
 dec_unsub_2_test() ->
@@ -419,7 +414,7 @@ dec_unsub_2_test() ->
 
 dec_msg_3_test() ->
     [R] = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
-    E = {msg, {<<"FOO.BAR">>, <<"9">>, 13}, <<"Hello, World!">>},
+    E = {msg, {<<"FOO.BAR">>, <<"9">>, undefined, 13}, <<"Hello, World!">>},
     ?assertEqual(E, R).
 
 dec_msg_4_test() ->
@@ -433,5 +428,14 @@ dec_many_lines_test() ->
     ?assertEqual(E1, R1),
     E2 = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
     ?assertEqual(E2, R2).
+
+% == Other Tests
+
+decode_encode_1_test() ->
+    E = <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>,
+    [R1] = decode(E),
+    io:format("R1: ~p~n", [R1]),
+    R2 = encode(R1),
+    ?assertEqual(E, R2).
 
 -endif.
