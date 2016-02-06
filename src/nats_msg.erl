@@ -1,4 +1,5 @@
 -module('nats_msg').
+-author("Yuce Tekol").
 
 %% API exports
 -export([encode/1,
@@ -131,7 +132,7 @@ encode({Name, Params, Payload}) ->
 decode(Message) ->
     [].
 
-%% == Internal functions
+%% == Internal
 
 name_to_binary(info) -> <<"INFO">>;
 name_to_binary(connect) -> <<"CONNECT">>;
@@ -163,61 +164,7 @@ encode_message(Name, Params, Payload) ->
     end,
     lists:reverse([?NL | R3]).
 
-
-
-% interp_data(Data, State) ->
-%     F = fun(Msg, {ResponseAcc, StateAcc}) ->
-%         case interp_msg(Msg, StateAcc) of
-%             {<<>>, NewState} ->
-%                 {ResponseAcc, NewState};
-%             {Response, NewState} ->
-%                 {[Response | ResponseAcc], NewState}
-%         end
-%     end,
-%     Messages = binary:split(Data, <<"\r\n">>, [global, trim_all]),
-%     {Response, NewState} = lists:foldl(F, {[], State}, Messages),
-%     {lists:reverse(Response), NewState}.
-
-% interp_msg(Msg, State) ->
-%     {Name, Payload} = case binary:match(Msg, [<<" ">>, <<"\t">>]) of
-%         nomatch ->
-%             {Msg, <<>>};
-%         PosLen ->
-%             N = msg_name(Msg, PosLen),
-%             P = msg_payload(Msg, PosLen, byte_size(Msg)),
-%             {N, P}
-%     end,
-%     interp({Name, Payload}, State).
-
-% msg_name(Msg, {Pos, _Len}) ->
-%     binary:part(Msg, {0, Pos}).
-
-% msg_payload(Msg, {Pos, Len}, Size) ->
-%     binary:part(Msg, {Pos + Len, Size - Pos - Len}).
-
-% interp([], {Response, State}) ->
-%     {Response, State};
-
-% interp({<<"CONNECT">>, Payload}, State) ->
-%     ClientInfo = jsx:decode(Payload, [return_maps]),
-%     NewState = State#{client_info => ClientInfo},
-%     Response = case maps:get(verbose, ClientInfo, false) of
-%         true -> <<"+OK\r\n">>;
-%         false -> <<>>
-%     end,
-%     {Response, NewState};
-
-% interp({<<"PING">>, _}, State) ->
-%     {<<"PONG\r\n">>, State};
-
-% interp({<<"SUB">>, Payload}, #{service := Service} = State) ->
-%     io:format("State: ~p~n", [State]),
-%     [Subject, Sid] = binary:split(Payload,
-%                                   [<<" ">>, <<"\t">>],
-%                                   [global, trim_all]),
-%     io:format("Sub:~s sid:~s~n", [Subject, Sid]),
-%     gnatsd_service:subscribe(Service, Subject, self()),
-%     {<<>>, State}.
+%% == Tests
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
