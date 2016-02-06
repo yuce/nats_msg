@@ -18,8 +18,11 @@
          ok/0,
          err/1]).
 
+-export([decode/1]).
+
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
+-define(SEPLIST, [<<" ">>, <<"\t">>]).
 
 %% == Encode API
 
@@ -115,6 +118,9 @@ err(slow_consumer) ->
 err(max_payload) ->
     err(<<"'Maximum Payload Exceeded'">>);
 
+err(invalid_subject) ->
+    err(<<"'Invalid Subject'">>);
+
 err(ErrMsg) ->
     encode({err, [ErrMsg], undefined}).
 
@@ -124,24 +130,32 @@ err(ErrMsg) ->
     Message :: binary().
 
 encode({Name, Params, Payload}) when is_atom(Name) ->
-    encode({name_to_binary(Name), Params, Payload});
+    encode({name_to_bin(Name), Params, Payload});
 
 encode({Name, Params, Payload}) ->
     Encoded = encode_message(Name, Params, Payload),
     iolist_to_binary(Encoded).
 
+% == Decode API
+
+-spec decode(Message :: binary()) ->
+    [{Name ::atom(), Params :: [binary()], Payload :: binary()}].
+
+decode(Message) ->
+    extract_line(Message, false, []).
+
 %% == Internal
 
-name_to_binary(info) -> <<"INFO">>;
-name_to_binary(connect) -> <<"CONNECT">>;
-name_to_binary(pub) -> <<"PUB">>;
-name_to_binary(sub) -> <<"SUB">>;
-name_to_binary(unsub) -> <<"UNSUB">>;
-name_to_binary(msg) -> <<"MSG">>;
-name_to_binary(ping) -> <<"PING">>;
-name_to_binary(pong) -> <<"PONG">>;
-name_to_binary(ok) -> <<"+OK">>;
-name_to_binary(err) -> <<"-ERR">>.
+name_to_bin(info) -> <<"INFO">>;
+name_to_bin(connect) -> <<"CONNECT">>;
+name_to_bin(pub) -> <<"PUB">>;
+name_to_bin(sub) -> <<"SUB">>;
+name_to_bin(unsub) -> <<"UNSUB">>;
+name_to_bin(msg) -> <<"MSG">>;
+name_to_bin(ping) -> <<"PING">>;
+name_to_bin(pong) -> <<"PONG">>;
+name_to_bin(ok) -> <<"+OK">>;
+name_to_bin(err) -> <<"-ERR">>.
 
 encode_message(Name, Params, Payload) ->
     R1 = [Name],
@@ -162,10 +176,102 @@ encode_message(Name, Params, Payload) ->
     end,
     lists:reverse([?NL | R3]).
 
+extract_line(<<>>, _, MsgAcc) ->
+    lists:reverse(MsgAcc);
+
+extract_line(Bin, PayloadMode, MsgAcc) ->
+    {Pos, Len} = binary:match(Bin, ?NL),
+    Line = binary:part(Bin, {0, Pos}),
+    Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
+    {NewMsgAcc, NewPayloadMode} = extract_msg(Line, PayloadMode, MsgAcc),
+    extract_line(Rest, NewPayloadMode, NewMsgAcc).
+
+extract_msg(Payload, true, [{Name, Params, _}| T]) ->
+    NewMsg = {Name, Params, Payload},
+    {[NewMsg | T], false};
+
+extract_msg(Bin, false, MsgAcc) ->
+    {Msg, PayloadMode} = split_msg(Bin),
+    {[Msg | MsgAcc], PayloadMode}.
+
+split_msg(Msg) ->
+    case binary:match(Msg, ?SEPLIST) of
+        nomatch ->
+            make_msg(bin_to_name(Msg), <<>>);
+        {Pos, Len} ->
+            Name = bin_to_name(binary:part(Msg, {0, Pos})),
+            Rest = binary:part(Msg, {Pos + Len, byte_size(Msg) - (Pos + Len)}),
+            make_msg(Name, Rest)
+    end.
+
+make_msg(ping, _) -> {ping, false};
+make_msg(pong, _) -> {pong, false};
+make_msg(ok, _) -> {ok, false};
+
+make_msg(info, Rest) ->
+    {{info, jsx:decode(Rest, [return_maps])}, false};
+
+make_msg(connect, Rest) ->
+    {{connect, jsx:decode(Rest, [return_maps])}, false};
+
+make_msg(err, Rest) ->
+    % TODO: handle spaces
+    {{err, err_to_atom(Rest)}, false};
+
+make_msg(sub, Rest) ->
+    Params = binary:split(Rest, ?SEPLIST, [global, trim_all]),
+    {{sub, list_to_tuple(Params)}, false};
+
+make_msg(pub, Rest) ->
+    Params = binary:split(Rest, ?SEPLIST, [global, trim_all]),
+    {{pub, list_to_tuple(Params), <<>>}, true};
+
+make_msg(msg, Rest) ->
+    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+        [Subject, Sid, BinBytes] ->
+            {Subject, Sid, binary_to_integer(BinBytes)};
+        [Subject, Sid, ReplyTo, BinBytes] ->
+            {Subject, Sid, ReplyTo, binary_to_integer(BinBytes)}
+    end,
+    {{msg, Params, <<>>}, true};
+
+make_msg(unsub, Rest) ->
+    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+        [Subject] ->
+            {Subject};
+        [Subject, BinMaxMsg] ->
+            {Subject, binary_to_integer(BinMaxMsg)}
+    end,
+    {{unsub, Params}, false}.
+
+
+bin_to_name(<<"INFO">>) -> info;
+bin_to_name(<<"CONNECT">>) -> connect;
+bin_to_name(<<"PUB">>) -> pub;
+bin_to_name(<<"SUB">>) -> sub;
+bin_to_name(<<"UNSUB">>) -> unsub;
+bin_to_name(<<"MSG">>) -> msg;
+bin_to_name(<<"PING">>) -> ping;
+bin_to_name(<<"PONG">>) -> pong;
+bin_to_name(<<"+OK">>) -> ok;
+bin_to_name(<<"-ERR">>) -> err.
+
+err_to_atom(<<"'Unknown Protocol Operation'">>) -> unknown_protocol;
+err_to_atom(<<"'Authorization Violation'">>) -> auth_violation;
+err_to_atom(<<"'Authorization Timeout'">>) -> auth_timeout;
+err_to_atom(<<"'Parser Error'">>) -> parser_error;
+err_to_atom(<<"'Stale Connection'">>) -> stale_connection;
+err_to_atom(<<"'Slow Consumer'">>) -> slow_consumer;
+err_to_atom(<<"'Maximum Payload Exceeded'">>) -> max_payload;
+err_to_atom(<<"'Invalid Subject'">>) -> invalid_subject;
+err_to_atom(_) -> unknown_error.
+
 %% == Tests
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+%% == Encode Tests
 
 ping_test() ->
     R = ping(),
@@ -188,12 +294,12 @@ err_test() ->
     ?assertEqual(E, R).
 
 info_test() ->
-    R = info(#{server_id => <<"0001-SERVER">>, auth_required => true}),
+    R = info(#{<<"server_id">> => <<"0001-SERVER">>, <<"auth_required">> => true}),
     E = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
     ?assertEqual(E, R).
 
 connect_test() ->
-    R = connect(#{verbose => true, name => <<"sample-client">>}),
+    R = connect(#{<<"verbose">> => true, <<"name">> => <<"sample-client">>}),
     E = <<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>,
     ?assertEqual(E, R).
 
@@ -242,5 +348,90 @@ msg_4_test() ->
     E = <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>,
     ?assertEqual(E, R).
 
+%% == Decode Tests
+
+dec_ping_test() ->
+    [R] = decode(<<"PING\r\n">>),
+    ?assertEqual(ping, R).
+
+dec_ping_spaces_test() ->
+    [R] = decode(<<"PING     \t    \r\n">>),
+    ?assertEqual(ping, R).
+
+dec_pong_test() ->
+    [R] = decode(<<"PONG\r\n">>),
+    ?assertEqual(pong, R).
+
+dec_ok_test() ->
+    [R] = decode(<<"+OK\r\n">>),
+    ?assertEqual(ok, R).
+
+dec_err_test() ->
+    [R] = decode(<<"-ERR 'Authorization Timeout'\r\n">>),
+    E = {err, auth_timeout},
+    ?assertEqual(E, R).
+
+dec_info_test() ->
+    [R] = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
+    E = {info,#{<<"auth_required">> => true,
+                <<"server_id">> => <<"0001-SERVER">>}},
+    ?assertEqual(E, R).
+
+dec_connect_test() ->
+    [R] = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
+    E = {connect, #{<<"verbose">> => true, <<"name">> => <<"sample-client">>}},
+    ?assertEqual(E, R).
+
+dec_pub_1_test() ->
+    [R] = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
+    E = {pub, {<<"NOTIFY">>, <<"0">>}, <<>>},
+    ?assertEqual(E, R).
+
+dec_pub_2_test() ->
+    [R] = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
+    E = {pub, {<<"FOO">>, <<"11">>}, <<"Hello NATS!">>},
+    ?assertEqual(E, R).
+
+dec_pub_3_test() ->
+    [R] = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
+    E = {pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"11">>}, <<"Knock Knock">>},
+    ?assertEqual(E, R).
+
+dec_sub_2_test() ->
+    [R] = decode(<<"SUB FOO 1\r\n">>),
+    E = {sub, {<<"FOO">>, <<"1">>}},
+    ?assertEqual(E, R).
+
+dec_sub_3_test() ->
+    [R] = decode(<<"SUB BAR G1 44\r\n">>),
+    E = {sub,{<<"BAR">>,<<"G1">>,<<"44">>}},
+    ?assertEqual(E, R).
+
+dec_unsub_1_test() ->
+    [R] = decode(<<"UNSUB 1\r\n">>),
+    E = {unsub, {<<"1">>}},
+    ?assertEqual(E, R).
+
+dec_unsub_2_test() ->
+    [R] = decode(<<"UNSUB 1 10\r\n">>),
+    E = {unsub, {<<"1">>, 10}},
+    ?assertEqual(E, R).
+
+dec_msg_3_test() ->
+    [R] = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
+    E = {msg, {<<"FOO.BAR">>, <<"9">>, 13}, <<"Hello, World!">>},
+    ?assertEqual(E, R).
+
+dec_msg_4_test() ->
+    [R] = decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    E = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
+    ?assertEqual(E, R).
+
+dec_many_lines_test() ->
+    [R1, R2] = decode(<<"PING\r\nMSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    E1 = ping,
+    ?assertEqual(E1, R1),
+    E2 = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
+    ?assertEqual(E2, R2).
 
 -endif.
