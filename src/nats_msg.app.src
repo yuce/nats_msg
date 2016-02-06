@@ -1,5 +1,5 @@
 {application, 'nats_msg',
- [{description, "NATS Protocol Message Parser"},
+ [{description, "NATS Protocol Message Encoder/Decoder"},
   {vsn, "0.1.0"},
   {registered, []},
   {applications,

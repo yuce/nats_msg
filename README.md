@@ -1,7 +1,7 @@
 nats_msg
 ========
 
-NATS Protocol Message Parser
+NATS Protocol Message Encoder/Decoder
 
 Build
 -----
