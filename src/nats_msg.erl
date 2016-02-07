@@ -79,12 +79,10 @@ encode({err, invalid_subject}) ->
 encode({err, ErrMsg}) ->
     encode(err, [ErrMsg], undefined);
 
-encode({info, Info}) ->
-    BinInfo = jsx:encode(Info),
+encode({info, BinInfo}) ->
     encode(info, [BinInfo], undefined);
 
-encode({connect, Info}) ->
-    BinInfo = jsx:encode(Info),
+encode({connect, BinInfo}) ->
     encode(connect, [BinInfo], undefined);
 
 encode({pub, {Subject, ReplyTo, Bytes}, Payload}) ->
@@ -230,10 +228,10 @@ make_msg(pong, _) -> pong;
 make_msg(ok, _) -> ok;
 
 make_msg(info, Rest) ->
-    {info, jsx:decode(Rest, [return_maps])};
+    {info, Rest};
 
 make_msg(connect, Rest) ->
-    {connect, jsx:decode(Rest, [return_maps])};
+    {connect, Rest};
 
 make_msg(err, Rest) ->
     % TODO: handle spaces
@@ -329,12 +327,12 @@ err_test() ->
     ?assertEqual(E, R).
 
 info_test() ->
-    R = info(#{<<"server_id">> => <<"0001-SERVER">>, <<"auth_required">> => true}),
+    R = info(<<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>),
     E = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
     ?assertEqual(E, R).
 
 connect_test() ->
-    R = connect(#{<<"verbose">> => true, <<"name">> => <<"sample-client">>}),
+    R = connect(<<"{\"name\":\"sample-client\",\"verbose\":true}">>),
     E = <<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>,
     ?assertEqual(E, R).
 
@@ -398,13 +396,12 @@ dec_err_test() ->
 
 dec_info_test() ->
     {[R], _} = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
-    E = {info,#{<<"auth_required">> => true,
-                <<"server_id">> => <<"0001-SERVER">>}},
+    E = {info, <<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>},
     ?assertEqual(E, R).
 
 dec_connect_test() ->
     {[R], _} = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
-    E = {connect, #{<<"verbose">> => true, <<"name">> => <<"sample-client">>}},
+    E = {connect, <<"{\"name\":\"sample-client\",\"verbose\":true}">>},
     ?assertEqual(E, R).
 
 dec_pub_1_test() ->
