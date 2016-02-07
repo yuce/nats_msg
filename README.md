@@ -63,7 +63,7 @@ that field is set to `undefined`.
 * `nats_msg:encode({pub, {<<"FOO">>, undefined, 11}, <<"Hello NATS!">>}` produces a `PUB` message
 with subject `<<"FOO">>` and payload `<<"Hello NATS!">>` of size `11` and no *reply to* subject.
 
-The library has convenience functions for all messages, like `nats_msg:ping/1`, which are
+The library has convenience functions for all messages, like `nats_msg:ping/0`, which are
 discuessed later in this document.
 
 ### Decoding
