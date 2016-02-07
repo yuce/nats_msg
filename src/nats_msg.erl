@@ -137,7 +137,7 @@ encode(Name, Params, Payload) ->
     {Messages :: [term()], Remaining :: binary()}.
 
 decode(Binary) ->
-    {Messages, Rem} = extract_line(Binary, false, []),
+    {Messages, Rem} = extract_line(Binary, undefined, [], undefined),
     {lists:reverse(Messages), Rem}.
 
 %% == Internal
@@ -172,52 +172,72 @@ encode_message(Name, Params, Payload) ->
     end,
     lists:reverse([?NL | R3]).
 
-extract_line(<<>>, _, MsgAcc) ->
-    {MsgAcc, <<>>};
-
-extract_line(Bin, PayloadMode, MsgAcc) ->
+extract_line(Bin, undefined, MsgAcc, _) ->
     case binary:match(Bin, ?NL) of
         nomatch ->
             {MsgAcc, Bin};
         {Pos, Len} ->
             Line = binary:part(Bin, {0, Pos}),
             Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
-            {NewMsgAcc, NewPayloadMode} = extract_msg(Line, PayloadMode, MsgAcc),
-            extract_line(Rest, NewPayloadMode, NewMsgAcc)
+            {NewMsgAcc, NewPayloadSize, Hold} = extract_msg(Line, MsgAcc),
+            case Hold of
+                true ->
+                    extract_line(Rest, NewPayloadSize, NewMsgAcc, <<Line/binary, ?NL/binary>>);
+                _ ->
+                    extract_line(Rest, NewPayloadSize, NewMsgAcc, undefined)
+            end
+    end;
+
+extract_line(Bin, PayloadSize, [{Name, Params, _} | RestMsg], BinHold) ->
+    BinSize = byte_size(Bin),
+    NextBin = PayloadSize + 2,
+    case BinSize >= NextBin of
+        true ->
+            Payload = binary:part(Bin, {0, PayloadSize}),
+            Msg = {Name, Params, Payload},
+            NewBin = binary:part(Bin, {NextBin, BinSize - NextBin}),
+            extract_line(NewBin, undefined, [Msg | RestMsg], <<>>);
+        false ->
+            % Input ended without the payload of the last msg completed.
+            % Remove that message from the result, and prepend it to the
+            % remaining result.
+            {RestMsg, <<BinHold/binary, Bin/binary>>}
     end.
 
+extract_msg(Bin, MsgAcc) ->
+    {Msg, PayloadSize, Hold} = split_msg(Bin),
+    {[Msg | MsgAcc], PayloadSize, Hold}.
 
-extract_msg(Payload, true, [{Name, Params, _}| T]) ->
-    NewMsg = {Name, Params, Payload},
-    {[NewMsg | T], false};
 
-extract_msg(Bin, false, MsgAcc) ->
-    {Msg, PayloadMode} = split_msg(Bin),
-    {[Msg | MsgAcc], PayloadMode}.
-
-split_msg(Msg) ->
-    case binary:match(Msg, ?SEPLIST) of
+split_msg(Bin) ->
+    Ret = case binary:match(Bin, ?SEPLIST) of
         nomatch ->
-            make_msg(bin_to_name(Msg), <<>>);
+            make_msg(bin_to_name(Bin), <<>>);
         {Pos, Len} ->
-            Name = bin_to_name(binary:part(Msg, {0, Pos})),
-            Rest = binary:part(Msg, {Pos + Len, byte_size(Msg) - (Pos + Len)}),
+            Name = bin_to_name(binary:part(Bin, {0, Pos})),
+            Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
             make_msg(Name, Rest)
+    end,
+    case Ret of
+        {_, _, _} ->
+            Ret;
+        _ ->
+            {Ret, undefined, false}
     end.
 
-make_msg(ping, _) -> {ping, false};
-make_msg(pong, _) -> {pong, false};
-make_msg(ok, _) -> {ok, false};
+make_msg(ping, _) -> ping;
+make_msg(pong, _) -> pong;
+make_msg(ok, _) -> ok;
 
 make_msg(info, Rest) ->
-    {{info, jsx:decode(Rest, [return_maps])}, false};
+    {info, jsx:decode(Rest, [return_maps])};
 
 make_msg(connect, Rest) ->
-    {{connect, jsx:decode(Rest, [return_maps])}, false};
+    {connect, jsx:decode(Rest, [return_maps])};
 
 make_msg(err, Rest) ->
     % TODO: handle spaces
-    {{err, err_to_atom(Rest)}, false};
+    {err, err_to_atom(Rest)};
 
 make_msg(sub, Rest) ->
     Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
@@ -226,25 +246,29 @@ make_msg(sub, Rest) ->
         [Subject, QueueGrp, Sid] ->
             {Subject, QueueGrp, Sid}
     end,
-    {{sub, Params}, false};
+    {sub, Params};
 
 make_msg(pub, Rest) ->
-    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
-        [Subject, Bytes] ->
-            {Subject, undefined, binary_to_integer(Bytes)};
-        [Subject, ReplyTo, Bytes] ->
-            {Subject, ReplyTo, binary_to_integer(Bytes)}
+    {Params, PayloadSize} = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+        [Subject, BinBytes] ->
+            PS = binary_to_integer(BinBytes),
+            {{Subject, undefined, PS}, PS};
+        [Subject, ReplyTo, BinBytes] ->
+            PS = binary_to_integer(BinBytes),
+            {{Subject, ReplyTo, PS}, PS}
     end,
-    {{pub, Params, <<>>}, true};
+    {{pub, Params, <<>>}, PayloadSize, true};
 
 make_msg(msg, Rest) ->
-    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+    {Params, PayloadSize} = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
         [Subject, Sid, BinBytes] ->
-            {Subject, Sid, undefined, binary_to_integer(BinBytes)};
+            PS = binary_to_integer(BinBytes),
+            {{Subject, Sid, undefined, PS}, PS};
         [Subject, Sid, ReplyTo, BinBytes] ->
-            {Subject, Sid, ReplyTo, binary_to_integer(BinBytes)}
+            PS = binary_to_integer(BinBytes),
+            {{Subject, Sid, ReplyTo, PS}, PS}
     end,
-    {{msg, Params, <<>>}, true};
+    {{msg, Params, <<>>}, PayloadSize, true};
 
 make_msg(unsub, Rest) ->
     Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
@@ -253,7 +277,7 @@ make_msg(unsub, Rest) ->
         [Subject, BinMaxMsg] ->
             {Subject, binary_to_integer(BinMaxMsg)}
     end,
-    {{unsub, Params}, false}.
+    {unsub, Params}.
 
 
 bin_to_name(<<"INFO">>) -> info;
@@ -438,8 +462,25 @@ dec_many_lines_test() ->
 dec_remaining_test() ->
     B = <<"SUB DEVICE.cikbsij2b0000m37h05a7m5oe.OUT 2\r\nSUB DEVICE.cikbsij2d0001m37h2u271jic.OUT 3\r\nSUB DEVICE.cikbsij2e0002m3">>,
     {Msgs, Rem} = decode(B),
-    ?assertEqual(length(Msgs), 2),
-    ?assertEqual(Rem, <<"SUB DEVICE.cikbsij2e0002m3">>).
+    ?assertEqual(2, length(Msgs)),
+    ?assertEqual(<<"SUB DEVICE.cikbsij2e0002m3">>, Rem).
+
+dec_nl_in_payload_test() ->
+    B = <<"PUB FOO 12\r\nHello\r\nNATS!\r\n">>,
+    {[M], Rem} = decode(B),
+    E = {pub, {<<"FOO">>, undefined, 12}, <<"Hello\r\nNATS!">>},
+    ?assertEqual(E, M),
+    ?assertEqual(Rem, <<>>).
+
+decl_incomplete_payload_test() ->
+    B = <<"SUB BAR 3\r\nPUB FOO 12\r\nHello\r\nNATS!">>,
+    {Msgs, Rem} = decode(B),
+    ?assertEqual(1, length(Msgs)),
+    E1 = {sub, {<<"BAR">>, undefined, <<"3">>}},
+    ?assertEqual(E1, hd(Msgs)),
+    E2 = <<"PUB FOO 12\r\nHello\r\nNATS!">>,
+    ?assertEqual(E2, Rem).
+
 
 
 % == Other Tests
