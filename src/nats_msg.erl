@@ -133,11 +133,12 @@ encode(Name, Params, Payload) ->
 
 % == Decode API
 
--spec decode(Message :: binary()) ->
-    [{Name ::atom(), Params :: [binary()], Payload :: binary()}].
+-spec decode(Binary :: binary()) ->
+    {Messages :: [term()], Remaining :: binary()}.
 
-decode(Message) ->
-    extract_line(Message, false, []).
+decode(Binary) ->
+    {Messages, Rem} = extract_line(Binary, false, []),
+    {lists:reverse(Messages), Rem}.
 
 %% == Internal
 
@@ -172,14 +173,19 @@ encode_message(Name, Params, Payload) ->
     lists:reverse([?NL | R3]).
 
 extract_line(<<>>, _, MsgAcc) ->
-    lists:reverse(MsgAcc);
+    {MsgAcc, <<>>};
 
 extract_line(Bin, PayloadMode, MsgAcc) ->
-    {Pos, Len} = binary:match(Bin, ?NL),
-    Line = binary:part(Bin, {0, Pos}),
-    Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
-    {NewMsgAcc, NewPayloadMode} = extract_msg(Line, PayloadMode, MsgAcc),
-    extract_line(Rest, NewPayloadMode, NewMsgAcc).
+    case binary:match(Bin, ?NL) of
+        nomatch ->
+            {MsgAcc, Bin};
+        {Pos, Len} ->
+            Line = binary:part(Bin, {0, Pos}),
+            Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
+            {NewMsgAcc, NewPayloadMode} = extract_msg(Line, PayloadMode, MsgAcc),
+            extract_line(Rest, NewPayloadMode, NewMsgAcc)
+    end.
+
 
 extract_msg(Payload, true, [{Name, Params, _}| T]) ->
     NewMsg = {Name, Params, Payload},
@@ -346,94 +352,101 @@ msg_4_test() ->
 %% == Decode Tests
 
 dec_ping_test() ->
-    [R] = decode(<<"PING\r\n">>),
+    {[R], _} = decode(<<"PING\r\n">>),
     ?assertEqual(ping, R).
 
 dec_ping_spaces_test() ->
-    [R] = decode(<<"PING     \t    \r\n">>),
+    {[R], _} = decode(<<"PING     \t    \r\n">>),
     ?assertEqual(ping, R).
 
 dec_pong_test() ->
-    [R] = decode(<<"PONG\r\n">>),
+    {[R], _} = decode(<<"PONG\r\n">>),
     ?assertEqual(pong, R).
 
 dec_ok_test() ->
-    [R] = decode(<<"+OK\r\n">>),
+    {[R], _} = decode(<<"+OK\r\n">>),
     ?assertEqual(ok, R).
 
 dec_err_test() ->
-    [R] = decode(<<"-ERR 'Authorization Timeout'\r\n">>),
+    {[R], _} = decode(<<"-ERR 'Authorization Timeout'\r\n">>),
     E = {err, auth_timeout},
     ?assertEqual(E, R).
 
 dec_info_test() ->
-    [R] = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
+    {[R], _} = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
     E = {info,#{<<"auth_required">> => true,
                 <<"server_id">> => <<"0001-SERVER">>}},
     ?assertEqual(E, R).
 
 dec_connect_test() ->
-    [R] = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
+    {[R], _} = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
     E = {connect, #{<<"verbose">> => true, <<"name">> => <<"sample-client">>}},
     ?assertEqual(E, R).
 
 dec_pub_1_test() ->
-    [R] = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
+    {[R], _} = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
     E = {pub, {<<"NOTIFY">>, undefined, 0}, <<>>},
     ?assertEqual(E, R).
 
 dec_pub_2_test() ->
-    [R] = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
+    {[R], _} = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
     E = {pub, {<<"FOO">>, undefined, 11}, <<"Hello NATS!">>},
     ?assertEqual(E, R).
 
 dec_pub_3_test() ->
-    [R] = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
+    {[R], _} = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
     E = {pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, 11}, <<"Knock Knock">>},
     ?assertEqual(E, R).
 
 dec_sub_2_test() ->
-    [R] = decode(<<"SUB FOO 1\r\n">>),
+    {[R], _} = decode(<<"SUB FOO 1\r\n">>),
     E = {sub, {<<"FOO">>, undefined, <<"1">>}},
     ?assertEqual(E, R).
 
 dec_sub_3_test() ->
-    [R] = decode(<<"SUB BAR G1 44\r\n">>),
+    {[R], _} = decode(<<"SUB BAR G1 44\r\n">>),
     E = {sub,{<<"BAR">>,<<"G1">>,<<"44">>}},
     ?assertEqual(E, R).
 
 dec_unsub_1_test() ->
-    [R] = decode(<<"UNSUB 1\r\n">>),
+    {[R], _} = decode(<<"UNSUB 1\r\n">>),
     E = {unsub, {<<"1">>, undefined}},
     ?assertEqual(E, R).
 
 dec_unsub_2_test() ->
-    [R] = decode(<<"UNSUB 1 10\r\n">>),
+    {[R], _} = decode(<<"UNSUB 1 10\r\n">>),
     E = {unsub, {<<"1">>, 10}},
     ?assertEqual(E, R).
 
 dec_msg_3_test() ->
-    [R] = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
+    {[R], _} = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
     E = {msg, {<<"FOO.BAR">>, <<"9">>, undefined, 13}, <<"Hello, World!">>},
     ?assertEqual(E, R).
 
 dec_msg_4_test() ->
-    [R] = decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    {[R], _} = decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
     E = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
     ?assertEqual(E, R).
 
 dec_many_lines_test() ->
-    [R1, R2] = decode(<<"PING\r\nMSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    {[R1, R2], _} = decode(<<"PING\r\nMSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
     E1 = ping,
     ?assertEqual(E1, R1),
     E2 = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
     ?assertEqual(E2, R2).
 
+dec_remaining_test() ->
+    B = <<"SUB DEVICE.cikbsij2b0000m37h05a7m5oe.OUT 2\r\nSUB DEVICE.cikbsij2d0001m37h2u271jic.OUT 3\r\nSUB DEVICE.cikbsij2e0002m3">>,
+    {Msgs, Rem} = decode(B),
+    ?assertEqual(length(Msgs), 2),
+    ?assertEqual(Rem, <<"SUB DEVICE.cikbsij2e0002m3">>).
+
+
 % == Other Tests
 
 decode_encode_1_test() ->
     E = <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>,
-    [R1] = decode(E),
+    {[R1], _} = decode(E),
     io:format("R1: ~p~n", [R1]),
     R2 = encode(R1),
     ?assertEqual(E, R2).
