@@ -1,6 +1,6 @@
 {application, 'nats_msg',
- [{description, "NATS Protocol Message Encoder/Decoder"},
-  {vsn, "0.3.0"},
+ [{description, "Pure Erlang NATS Protocol Message Encoder/Decoder"},
+  {vsn, "0.3.1"},
   {registered, []},
   {applications,
    [kernel,
