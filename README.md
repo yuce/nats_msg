@@ -35,16 +35,53 @@ Run the tests using:
 
 ## Usage
 
-Binaries are used exclusively throught the library. Encoding a message produces a binary. Decoding a binary produces a `{Messages, RemainingBinary}` tuple.
-`Messages` is a list of messages and
-`RemainingBinary` is the part of the input which wasn't decoded and returned. The latter
-is very useful when dealing with streams, where the input is chunked and requires appending
-chunks to be able to decode messages. In those situations, just prepend `RemaningBinary` to
-the next binary chunk.
+Binaries are used exclusively throughout the library.
 
-Currently, no error handling is performed.
+Currently, no error handling is performed during encoding/decoding. You can protect
+against crashes by wrapping library functions between `try...catch`.
 
-### INFO
+### Encoding
+
+Encoding a message produces a binary. `nats_msg:encode/1` takes an atom as the name of the
+message or a tuple which contains the name, parameters and payload of the message.
+
+The general form of `nats_msg:encode/1` parameters is:
+
+* `Name :: atom()`: For messages taking no parameters,
+* `{Name :: atom(), Parameters :: {binary() | int(), ...}}` for messages taking parameters but
+no payloads,
+* `{Name :: atom(), Parameters :: {binary() | int(), ...}, Payload :: binary()}` for messages
+taking parameters and payloads.
+
+Messages of the same type always have the same structure, even if some of the values are
+`undefined`. Some examples:
+
+* `nats_msg:encode(ping)` produces a `PING` message,
+* `nats_msg:encode({sub, {<<"INBOX">>, undefined, <<"2">>}}` produces a `SUB` message with
+subject `<<"INBOX">>` and SID `<<"2">>`. This particular message has no *queue group*, so
+that field is set to `undefined`.
+* `nats_msg:encode({pub, {<<"FOO">>, undefined, 11}, <<"Hello NATS!">>}` produces a `PUB` message
+with subject `<<"FOO">>` and payload `<<"Hello NATS!">>` of size `11` and no *reply to* subject.
+
+The library has convenience functions for all messages, like `nats_msg:ping/1`, which are
+discuessed later in this document.
+
+### Decoding
+
+Decoding a binary produces a `{Messages, RemainingBinary}` tuple.
+`Messages` is a list of messages and `RemainingBinary` is the part of the input which
+wasn't decoded and returned. The latter is very useful when dealing with streams, where
+the input is chunked and requires appending chunks to be able to decode messages.
+In those situations, just prepend `RemaningBinary` to the next binary chunk.
+
+Messages in the `Messages` list can be used as inputs to `nats_msg:encode`, like:
+
+    SomeBinary = ...
+    {[Msg | _], Remaining} = nats_msg:decode(SomeBinary),
+    ReEncodedBinary = nats_msg:encode(Msg),
+    % ReEncodedBinary = SomeBinary
+
+### INFO Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#INFO)
 
@@ -69,7 +106,7 @@ to convert `BinaryInfo` to a map:
     {info, BinaryInfo} = Msg,
     ServerInfo = jsx:decode(BinaryInfo, [return_maps]).
 
-### CONNECT
+### CONNECT Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#CONNECT)
 
@@ -94,9 +131,13 @@ to convert `BinaryInfo` to a map:
     {connect, BinaryInfo} = Msg,
     ClientInfo = jsx:decode(BinaryInfo, [return_maps]).
 
-### PUB
+### PUB Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#PUB)
+
+Subjects in NATS protocol are case-insensitive, so `<<"foo.bar">>` and `<<"FOO.Bar">>`
+are equivalent subjects. `nats_msg` doesn't transform subjects in the encoded/decoded message,
+so it's up to the application to deal with this detail.
 
 #### Encode
 
@@ -114,7 +155,7 @@ Send some data (*payload*) to subscribers (*without a reply subject*):
 
 ### Decode
 
-Notification:
+Publish notification:
 
     Chunk = <<"PUB NOTIFY 0\r\n\r\n">>,
     {[Msg], _} = nats_msg:decode(Chunk),
@@ -134,30 +175,39 @@ Publish message with replier and payload:
     % PayloadSize = 11,
     % Payload = <<"Knock Knock">>.
 
-### SUB
+### SUB Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#SUB)
 
-### UNSUB
+Subjects in NATS protocol are case-insensitive, so `<<"foo.bar">>` and `<<"FOO.Bar">>`
+are equivalent subjects. `nats_msg` doesn't transform subjects in the encoded/decoded message,
+so it's up to the application to deal with this detail.
+
+### UNSUB Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#UNSUB)
 
-### MSG
+### MSG Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#MSG)
 
-### PING
+Subjects in NATS protocol are case-insensitive, so `<<"foo.bar">>` and `<<"FOO.Bar">>`
+are equivalent subjects. `nats_msg` doesn't transform subjects in the encoded/decoded message,
+so it's up to the application to deal with this detail.
+
+
+### PING Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#PING)
 
-### PONG
+### PONG Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#PONG)
 
-### +OK
+### +OK Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#OKERR)
 
-### -ERR
+### -ERR Message
 
 [NATS Spec](http://nats.io/documentation/internals/nats-protocol/#OKERR)
