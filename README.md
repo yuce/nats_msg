@@ -15,12 +15,16 @@ have any dependency other than Erlang/OTP (16+ *should* be OK) and optionally
 it is available on [hex.pm](https://hex.pm/). Just include the following
 in your `rebar.config`:
 
-    {deps[nats_msg]}.
+```erlang
+{deps[nats_msg]}.
+```
 
 Alternatively (*for whatever reason you don't like to use hex.pm*):
 
-    {deps, [
-        {nat_msg, {git, "https://github.com/yuce/nats_msg.git", {branch, "master"}}.
+```erlang
+{deps, [
+    {nat_msg, {git, "https://github.com/yuce/nats_msg.git", {branch, "master"}}.
+```
 
 Or, you can just copy `src/nats_msg.erl` to your project to use it.
 
@@ -87,21 +91,27 @@ to decode it.
 
 Messages in the `Messages` list can be used as inputs to `nats_msg:encode`, like:
 
-    SomeBinary = ...
-    {[Msg], Remaining} = nats_msg:decode(SomeBinary),
-    ReEncodedBinary = nats_msg:encode(Msg),
-    % ReEncodedBinary = SomeBinary
+```erlang
+SomeBinary = ...
+{[Msg], Remaining} = nats_msg:decode(SomeBinary),
+ReEncodedBinary = nats_msg:encode(Msg),
+% ReEncodedBinary = SomeBinary
+```
 
 Note that in this document, the message extraction code is written like the following for
 convenience:
 
-    {[Msg], Remaining} = nats_msg:decode(SomeBinary),
+```erlang
+{[Msg], Remaining} = nats_msg:decode(SomeBinary),
+```
 
 That will work if there is only 1 decodable message in the input, and will cause a crash
 if there are more. The correct way of handling messages is:
 
-    {Messages, Remaining} = nats_msg:decode(SomeBinary),
-    % Operate on Messages
+```erlang
+{Messages, Remaining} = nats_msg:decode(SomeBinary),
+% Operate on Messages
+```
 
 ### INFO Message
 
@@ -109,16 +119,20 @@ if there are more. The correct way of handling messages is:
 
 #### Encode
 
-    ServerInfo = #{<<"auth_required">> => true, <<"server_id">> => <<"0001-SERVER">>},
-    BinaryInfo = jsx:encode(ServerInfo),
-    BinaryMsg = nats_msg:info(BinaryInfo).
+```erlang
+ServerInfo = #{<<"auth_required">> => true, <<"server_id">> => <<"0001-SERVER">>},
+BinaryInfo = jsx:encode(ServerInfo),
+BinaryMsg = nats_msg:info(BinaryInfo).
+```
 
 #### Decode
 
-    Chunk = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {info, BinaryInfo} = Msg,
-    ServerInfo = jsx:decode(BinaryInfo, [return_maps]).
+```erlang
+Chunk = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{info, BinaryInfo} = Msg,
+ServerInfo = jsx:decode(BinaryInfo, [return_maps]).
+```
 
 ### CONNECT Message
 
@@ -126,16 +140,20 @@ if there are more. The correct way of handling messages is:
 
 #### Encode
 
-    ConnectInfo = #{<<"auth_required">> => true, <<"server_id">> => <<"0001-SERVER">>},
-    BinaryInfo = jsx:encode(ServerInfo),
-    BinaryMsg = nats_msg:connect(BinaryInfo).
+```erlang
+ConnectInfo = #{<<"auth_required">> => true, <<"server_id">> => <<"0001-SERVER">>},
+BinaryInfo = jsx:encode(ServerInfo),
+BinaryMsg = nats_msg:connect(BinaryInfo).
+```
 
 #### Decode
 
-    Chunk = <<"CONNECT {\"verbose\":true,\"name\":\"the_client\"}\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {connect, BinaryInfo} = Msg,
-    ClientInfo = jsx:decode(BinaryInfo, [return_maps]).
+```erlang
+Chunk = <<"CONNECT {\"verbose\":true,\"name\":\"the_client\"}\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{connect, BinaryInfo} = Msg,
+ClientInfo = jsx:decode(BinaryInfo, [return_maps]).
+```
 
 ### PUB Message
 
@@ -145,37 +163,47 @@ if there are more. The correct way of handling messages is:
 
 Notify subscribers of a subject:
 
-    BinaryMsg = nats_msg:pub(<<"NOTIFY.INBOX">>).
+```erlang
+BinaryMsg = nats_msg:pub(<<"NOTIFY.INBOX">>).
+```
 
 Send some data (*payload*) to subscribers, providing a *reply* subject:
 
-    BinaryMsg = nats_msg:pub(<<"FOOBAR">>, <<"REPRAP">>, <<"Hello, World!">>).
+```erlang
+BinaryMsg = nats_msg:pub(<<"FOOBAR">>, <<"REPRAP">>, <<"Hello, World!">>).
+```
 
 Send some data (*payload*) to subscribers (*without a reply subject*):
 
-    BinaryMsg = nats_msg:pub(<<"FOOBAR">>, undefined, <<"Hello, World!">>).
+```erlang
+BinaryMsg = nats_msg:pub(<<"FOOBAR">>, undefined, <<"Hello, World!">>).
+```
 
 ### Decode
 
 Publish notification:
 
-    Chunk = <<"PUB NOTIFY 0\r\n\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
-    % Subject = <<"NOTIFY">>,
-    % ReplyTo = undefined,
-    % PayloadSize = 0,
-    % Payload = <<>>.
+```erlang
+Chunk = <<"PUB NOTIFY 0\r\n\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
+% Subject = <<"NOTIFY">>,
+% ReplyTo = undefined,
+% PayloadSize = 0,
+% Payload = <<>>.
+```
 
 Publish message with subject, replier and payload:
 
-    Chunk = <<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
-    % Subject = <<"FRONT.DOOR">>,
-    % ReplyTo = <<"INBOX.22">>,
-    % PayloadSize = 11,
-    % Payload = <<"Knock Knock">>.
+```erlang
+Chunk = <<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
+% Subject = <<"FRONT.DOOR">>,
+% ReplyTo = <<"INBOX.22">>,
+% PayloadSize = 11,
+% Payload = <<"Knock Knock">>.
+```
 
 ### SUB Message
 
@@ -185,20 +213,26 @@ Publish message with subject, replier and payload:
 
 Subscribe message with subject and SID:
 
-    BinaryMsg = nats_msg:sub(<<"FOO">>, <<"1">>).
+```erlang
+BinaryMsg = nats_msg:sub(<<"FOO">>, <<"1">>).
+```
 
 Subscribe message with subject, group queue and SID:
 
-    BinaryMsg = nats_msg:sub(<<"BAR">>, <<"G1">>, <<"44">>)
+```erlang
+BinaryMsg = nats_msg:sub(<<"BAR">>, <<"G1">>, <<"44">>)
+```
 
 #### Decode
 
-    Chunk = <<"SUB FOO 1\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {sub, {Subject, GroupQueue, Sid}} = Msg,
-    % Subject = <<"FOO">>,
-    % GroupQueue = undefined,
-    % Sid = <<"1">>.
+```erlang
+Chunk = <<"SUB FOO 1\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{sub, {Subject, GroupQueue, Sid}} = Msg,
+% Subject = <<"FOO">>,
+% GroupQueue = undefined,
+% Sid = <<"1">>.
+```
 
 ### UNSUB Message
 
@@ -208,19 +242,25 @@ Subscribe message with subject, group queue and SID:
 
 Unsubscribe message with SID:
 
-    BinaryMsg = nats_msg:unsub(<<"1">>).
+```erlang
+BinaryMsg = nats_msg:unsub(<<"1">>).
+```
 
 Unsubscribe message with SID and *max messages*:
 
-    BinaryMsg = nats_msg:unsub(<<"1">>, 10).
+```erlang
+BinaryMsg = nats_msg:unsub(<<"1">>, 10).
+```
 
 #### Decode
 
-    Chunk = <<"UNSUB 1 10\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {unsub, {Sid, MaxMessages}} = Msg,
-    % Sid = <<"1">>,
-    % MaxMessages = 10
+```erlang
+Chunk = <<"UNSUB 1 10\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{unsub, {Sid, MaxMessages}} = Msg,
+% Sid = <<"1">>,
+% MaxMessages = 10
+```
 
 ### MSG Message
 
@@ -230,27 +270,35 @@ Unsubscribe message with SID and *max messages*:
 
 Message with subject and SID:
 
-    BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>).
+```erlang
+BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>).
+```
 
 Message with subject, sid, *reply to subject* and payload:
 
-    BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>, <<"INBOX">>, <<"Hello!">>).
+```erlang
+BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>, <<"INBOX">>, <<"Hello!">>).
+```
 
 Message with subject, sid and payload:
 
-    BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>, undefined, <<"Hello!">>).
+```erlang
+BinaryMsg = nats_msg:msg(<<"FOO">>, <<"5">>, undefined, <<"Hello!">>).
+```
 
 #### Decode
 
 Message with subject, sid and payload:
 
-    Chunk = <<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {msg, {Subject, Sid, ReplyTo, 13}, Payload} = Msg,
-    % Subject = <<"FOO.BAR">>,
-    % Sid = <<"9">>,
-    % ReplyTo = undefined,
-    % Payload = <<"Hello, World!">>.
+```erlang
+Chunk = <<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{msg, {Subject, Sid, ReplyTo, 13}, Payload} = Msg,
+% Subject = <<"FOO.BAR">>,
+% Sid = <<"9">>,
+% ReplyTo = undefined,
+% Payload = <<"Hello, World!">>.
+```
 
 ### PING Message
 
@@ -258,12 +306,16 @@ Message with subject, sid and payload:
 
 #### Encode
 
-    BinaryMsg = nats_msg:ping().
+```erlang
+BinaryMsg = nats_msg:ping().
+```
 
 #### Decode
 
-    {[Msg], _} = nats_msg:decode(<<"PING\r\n">>),
-    % Msg = ping
+```erlang
+{[Msg], _} = nats_msg:decode(<<"PING\r\n">>),
+% Msg = ping
+```
 
 ### PONG Message
 
@@ -271,12 +323,16 @@ Message with subject, sid and payload:
 
 #### Encode
 
-    BinaryMsg = nats_msg:pong().
+```erlang
+BinaryMsg = nats_msg:pong().
+```
 
 #### Decode
 
-    {[Msg], _} = nats_msg:decode(<<"PONG\r\n">>),
-    % Msg = pong
+```erlang
+{[Msg], _} = nats_msg:decode(<<"PONG\r\n">>),
+% Msg = pong
+```
 
 ### +OK Message
 
@@ -284,12 +340,16 @@ Message with subject, sid and payload:
 
 #### Encode
 
-    BinaryMsg = nats_msg:ok().
+```erlang
+BinaryMsg = nats_msg:ok().
+```
 
 #### Decode
 
-    {[Msg], _} = nats_msg:decode(<<"+OK\r\n">>),
-    % Msg = ok
+```erlang
+{[Msg], _} = nats_msg:decode(<<"+OK\r\n">>),
+% Msg = ok
+```
 
 ### -ERR Message
 
@@ -310,12 +370,16 @@ to/from atoms as:
 
 #### Encode
 
-    BinaryMsg = nats_msg:err(auth_violation).
+```erlang
+BinaryMsg = nats_msg:err(auth_violation).
+```
 
 #### Decode
 
-    Chunk = <<"-ERR 'Authorization Timeout'\r\n">>,
-    {[Msg], _} = nats_msg:decode(Chunk),
-    {err, Error} = Msg,
-    % Error = auth_timeout
+```erlang
+Chunk = <<"-ERR 'Authorization Timeout'\r\n">>,
+{[Msg], _} = nats_msg:decode(Chunk),
+{err, Error} = Msg,
+% Error = auth_timeout
+```
 
