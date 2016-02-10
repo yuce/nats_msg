@@ -45,10 +45,6 @@ Binaries are used exclusively throughout the library.
 Currently, no error handling is performed during encoding/decoding. You can protect
 against crashes by wrapping library functions between `try...catch`.
 
-Subjects in NATS protocol are case-insensitive, so `<<"foo.bar">>` and `<<"FOO.Bar">>`
-are equivalent subjects. **nats_msg** doesn't transform subjects in the encoded/decoded message,
-so it's up to the application to deal with this detail.
-
 `INFO` and `CONNECT` messages have a JSON object as their parameter; but in order to
 not introduce a dependency, **nats_msg** does not encode/decode JSON objects. These parameters
 are kept or returned as binaries. You can use [jsx](https://github.com/talentdeficit/jsx) or [jiffy](https://github.com/davisp/jiffy)

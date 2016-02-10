@@ -242,9 +242,9 @@ extract_msg(Bin, MsgAcc) ->
 split_msg(Bin) ->
     Ret = case binary:match(Bin, ?SEPLIST) of
         nomatch ->
-            make_msg(bin_to_name(Bin), <<>>);
+            make_msg(bin_to_name(upper_case(Bin)), <<>>);
         {Pos, Len} ->
-            Name = bin_to_name(binary:part(Bin, {0, Pos})),
+            Name = bin_to_name(upper_case(binary:part(Bin, {0, Pos}))),
             Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
             make_msg(Name, Rest)
     end,
@@ -330,6 +330,9 @@ err_to_atom(<<"'Slow Consumer'">>) -> slow_consumer;
 err_to_atom(<<"'Maximum Payload Exceeded'">>) -> max_payload;
 err_to_atom(<<"'Invalid Subject'">>) -> invalid_subject;
 err_to_atom(_) -> unknown_error.
+
+upper_case(Bin) ->
+    list_to_binary(string:to_upper(binary_to_list(Bin))).
 
 %% == Tests
 
@@ -501,7 +504,7 @@ dec_nl_in_payload_test() ->
     ?assertEqual(E, M),
     ?assertEqual(Rem, <<>>).
 
-decl_incomplete_payload_test() ->
+dec_incomplete_payload_test() ->
     B = <<"SUB BAR 3\r\nPUB FOO 12\r\nHello\r\nNATS!">>,
     {Msgs, Rem} = decode(B),
     ?assertEqual(1, length(Msgs)),
@@ -509,6 +512,18 @@ decl_incomplete_payload_test() ->
     ?assertEqual(E1, hd(Msgs)),
     E2 = <<"PUB FOO 12\r\nHello\r\nNATS!">>,
     ?assertEqual(E2, Rem).
+
+dec_case_insensitive_op_name_test_1() ->
+    {[R1], _} = decode(<<"PING\r\n">>),
+    {[R2], _} = decode(<<"PinG\r\n">>),
+    ?assertEqual(ping, R1),
+    ?assertEqual(ping, R2).
+
+dec_case_insensitive_op_name_test_2() ->    
+    {[{R1, _}], _} = decode(<<"SUB FOO 1\r\n">>),
+    {[{R2, _}], _} = decode(<<"sub FOO 1\r\n">>),
+    ?assertEqual(sub, R1),
+    ?assertEqual(sub, R2).
 
 % == Other Tests
 
