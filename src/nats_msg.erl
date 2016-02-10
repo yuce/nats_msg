@@ -84,7 +84,7 @@ encode(ping) -> encode(ping, [], undefined);
 encode(pong) -> encode(pong, [], undefined);
 encode(ok) -> encode(ok, [], undefined);
 
-encode({err, unknown_protocol}) ->
+encode({err, unknown_operation}) ->
     encode(err, [<<"'Unknown Protocol Operation'">>], undefined);
 
 encode({err, auth_violation}) ->
@@ -321,7 +321,7 @@ bin_to_name(<<"PONG">>) -> pong;
 bin_to_name(<<"+OK">>) -> ok;
 bin_to_name(<<"-ERR">>) -> err.
 
-err_to_atom(<<"'Unknown Protocol Operation'">>) -> unknown_protocol;
+err_to_atom(<<"'Unknown Protocol Operation'">>) -> unknown_operation;
 err_to_atom(<<"'Authorization Violation'">>) -> auth_violation;
 err_to_atom(<<"'Authorization Timeout'">>) -> auth_timeout;
 err_to_atom(<<"'Parser Error'">>) -> parser_error;

@@ -354,7 +354,7 @@ BinaryMsg = nats_msg:ok().
 The spec defines a predefined set of error messages, so **nats_msg** encodes/decodes these
 to/from atoms as:
 
-* `'Unknown Protocol Operation'` => `unknown_protocol`
+* `'Unknown Protocol Operation'` => `unknown_operation`
 * `'Authorization Violation'` => `auth_violation`
 * `'Authorization Timeout'` => `auth_timeout`
 * `'Parser Error'` => `parser_error`
