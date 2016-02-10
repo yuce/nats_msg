@@ -513,13 +513,13 @@ dec_incomplete_payload_test() ->
     E2 = <<"PUB FOO 12\r\nHello\r\nNATS!">>,
     ?assertEqual(E2, Rem).
 
-dec_case_insensitive_op_name_test_1() ->
+dec_case_insensitive_op_name_1_test() ->
     {[R1], _} = decode(<<"PING\r\n">>),
     {[R2], _} = decode(<<"PinG\r\n">>),
     ?assertEqual(ping, R1),
     ?assertEqual(ping, R2).
 
-dec_case_insensitive_op_name_test_2() ->    
+dec_case_insensitive_op_name_2_test() ->
     {[{R1, _}], _} = decode(<<"SUB FOO 1\r\n">>),
     {[{R2, _}], _} = decode(<<"sub FOO 1\r\n">>),
     ?assertEqual(sub, R1),
