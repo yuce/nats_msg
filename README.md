@@ -16,7 +16,7 @@ it is available on [hex.pm](https://hex.pm/). Just include the following
 in your `rebar.config`:
 
 ```erlang
-{deps[nats_msg]}.
+{deps, [nats_msg]}.
 ```
 
 Alternatively (*for whatever reason you don't like to use hex.pm*):
