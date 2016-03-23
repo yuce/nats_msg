@@ -207,7 +207,7 @@ decode(Other) -> {[], Other}.
 %% == Internal - decode
 
 decode_messages(<<>>, Acc) ->
-    Acc;
+    {Acc, <<>>};
 
 decode_messages(Bin, Acc) ->
     case decode(Bin) of
@@ -491,9 +491,14 @@ dec_incomplete_payload_test() ->
     E = {[], <<"PUB FOO 12\r\nHello\r\nNATS!">>},
     ?assertEqual(E, R).
 
-dec_all_messages_test() ->
+dec_all_messages_1_test() ->
     R = decode_all(<<"+OK\r\nPING\r\nM">>),
     E = {[ok, ping], <<"M">>},
+    ?assertEqual(E, R).
+
+dec_all_messages_2_test() ->
+    R = decode_all(<<"INFO {\"server_id\":\"b379e32c3cd3dd8515c919a42d813eaf\",\"version\":\"0.7.2\",\"go\":\"go1.5.2\",\"host\":\"127.0.0.1\",\"port\":4222,\"auth_required\":false,\"ssl_required\":false,\"tls_required\":false,\"tls_verify\":false,\"max_payload\":1048576} \r\n">>),
+    E = {[{info, <<"{\"server_id\":\"b379e32c3cd3dd8515c919a42d813eaf\",\"version\":\"0.7.2\",\"go\":\"go1.5.2\",\"host\":\"127.0.0.1\",\"port\":4222,\"auth_required\":false,\"ssl_required\":false,\"tls_required\":false,\"tls_verify\":false,\"max_payload\":1048576} ">>}], <<>>},
     ?assertEqual(E, R).
 
 % % == Other Tests
