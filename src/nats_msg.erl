@@ -33,8 +33,9 @@
 -module(nats_msg).
 -author("Yuce Tekol").
 
--export([encode/1,
-         encode/3,
+-export([init/0,
+         encode/1,
+        %  encode/3,
          decode/1]).
 
 -export([ping/0,
@@ -52,292 +53,242 @@
          msg/2,
          msg/4]).
 
+% -on_load(init/0).
+
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
 -define(SEPLIST, [<<" ">>, <<"\t">>]).
+
+%% == API
+
+init() ->
+    put(nats_msg@nl, binary:compile_pattern(<<"\r\n">>)),
+    put(nats_msg@sep, binary:compile_pattern(<<" ">>)),
+    ok.
 
 %% == Encode API
 
 ping() -> encode(ping).
 pong() -> encode(pong).
 ok() -> encode(ok).
-err(Msg) -> encode({err, Msg}).
+err(Msg) -> encode({error, Msg}).
 info(Info) -> encode({info, Info}).
 connect(Info) -> encode({connect, Info}).
 
-pub(Subject) -> encode({pub, {Subject, undefined, 0}, <<>>}).
+pub(Subject) ->
+    encode({pub, {Subject, undefined, <<>>}}).
 pub(Subject, ReplyTo, Payload) ->
-    encode({pub, {Subject, ReplyTo, byte_size(Payload)}, Payload}).
+    encode({pub, {Subject, ReplyTo, Payload}}).
 
-sub(Subject, Sid) -> encode({sub, {Subject, undefined, Sid}}).
-sub(Subject, QueueGrp, Sid) -> encode({sub, {Subject, QueueGrp, Sid}}).
+sub(Subject, Sid) ->
+    encode({sub, {Subject, undefined, Sid}}).
+sub(Subject, QueueGrp, Sid) ->
+    encode({sub, {Subject, QueueGrp, Sid}}).
 
-unsub(Sid) -> encode({unsub, {Sid, undefined}}).
-unsub(Sid, MaxMsg) -> encode({unsub, {Sid, MaxMsg}}).
+unsub(Sid) ->
+    encode({unsub, {Sid, undefined}}).
+unsub(Sid, MaxMsg) ->
+    encode({unsub, {Sid, MaxMsg}}).
 
 msg(Subject, Sid) ->
-    encode({msg, {Subject, Sid, undefined, 0}, <<>>}).
+    encode({msg, {Subject, Sid, undefined, <<>>}}).
 msg(Subject, Sid, ReplyTo, Payload) ->
-    encode({msg, {Subject, Sid, ReplyTo, byte_size(Payload)}, Payload}).
+    encode({msg, {Subject, Sid, ReplyTo, Payload}}).
 
-encode(ping) -> encode(ping, [], undefined);
-encode(pong) -> encode(pong, [], undefined);
-encode(ok) -> encode(ok, [], undefined);
+encode(ping) -> <<"PING\r\n">>;
+encode(pong) -> <<"PONG\r\n">>;
+encode(ok) -> <<"+OK\r\n">>;
+encode({error, unknown_operation}) -> <<"-ERR 'Unknown Protocol Operation'\r\n">>;
+encode({error, auth_violation}) -> <<"-ERR 'Authorization Violation'\r\n">>;
+encode({error, auth_timeout}) -> <<"-ERR 'Authorization Timeout'\r\n">>;
+encode({error, parser_error}) -> <<"-ERR 'Parser Error'\r\n">>;
+encode({error, stale_connection}) -> <<"-ERR 'Stale Connection'\r\n">>;
+encode({error, slow_consumer}) -> <<"-ERR 'Slow Consumer'\r\n">>;
+encode({error, max_payload}) -> <<"-ERR 'Maximum Payload Exceeded'\r\n">>;
+encode({error, invalid_subject}) -> <<"-ERR 'Invalid Subject'\r\n">>;
+encode({info, BinInfo}) -> [<<"INFO ">>, BinInfo, <<"\r\n">>];
+encode({connect, BinConnect}) -> [<<"CONNECT ">>, BinConnect, <<"\r\n">>];
 
-encode({err, unknown_operation}) ->
-    encode(err, [<<"'Unknown Protocol Operation'">>], undefined);
+encode({pub, {Subject, undefined, Payload}}) ->
+    BinPS = integer_to_binary(iolist_size(Payload)),
+    [<<"PUB ">>, Subject, <<" ">>, BinPS, <<"\r\n">>,
+      Payload, <<"\r\n">>];
 
-encode({err, auth_violation}) ->
-    encode(err, [<<"'Authorization Violation'">>], undefined);
+encode({pub, {Subject, ReplyTo, Payload}}) ->
+    BinPS = integer_to_binary(iolist_size(Payload)),
+    [<<"PUB ">>, Subject, <<" ">>, ReplyTo, <<" ">>, BinPS, <<"\r\n">>,
+      Payload, <<"\r\n">>];
 
-encode({err, auth_timeout}) ->
-    encode(err, [<<"'Authorization Timeout'">>], undefined);
-
-encode({err, parser_error}) ->
-    encode(err, [<<"'Parser Error'">>], undefined);
-
-encode({err, stale_connection}) ->
-    encode(err, [<<"'Stale Connection'">>], undefined);
-
-encode({err, slow_consumer}) ->
-    encode(err, [<<"'Slow Consumer'">>], undefined);
-
-encode({err, max_payload}) ->
-    encode(err, [<<"'Maximum Payload Exceeded'">>], undefined);
-
-encode({err, invalid_subject}) ->
-    encode(err, [<<"'Invalid Subject'">>], undefined);
-
-encode({err, ErrMsg}) ->
-    encode(err, [ErrMsg], undefined);
-
-encode({info, BinInfo}) ->
-    encode(info, [BinInfo], undefined);
-
-encode({connect, BinInfo}) ->
-    encode(connect, [BinInfo], undefined);
-
-encode({pub, {Subject, ReplyTo, Bytes}, Payload}) ->
-    Params = case ReplyTo of
-        undefined -> [Subject, integer_to_binary(Bytes)];
-        _ -> [Subject, ReplyTo, integer_to_binary(Bytes)]
-    end,
-    encode(pub, Params, Payload);
+encode({sub, {Subject, undefined, Sid}}) ->
+    [<<"SUB ">>, Subject, <<" ">>, Sid, <<"\r\n">>];
 
 encode({sub, {Subject, QueueGrp, Sid}}) ->
-    Params = case QueueGrp of
-        undefined ->
-            [Subject, Sid];
-        _ ->
-            [Subject, QueueGrp, Sid]
-    end,
-    encode(sub, Params, undefined);
+    [<<"SUB ">>, Subject, <<" ">>, QueueGrp, <<" ">>, Sid, <<"\r\n">>];
+
+encode({unsub, {Subject, undefined}}) ->
+    [<<"UNSUB ">>, Subject, <<"\r\n">>];
 
 encode({unsub, {Subject, MaxMsg}}) ->
-    Params = case MaxMsg of
-        undefined ->
-            [Subject];
-        M when M > 0 ->
-            [Subject, integer_to_binary(M)]
-    end,
-    encode(unsub, Params, undefined);
+    BinMaxMsg = integer_to_binary(MaxMsg),
+    [<<"UNSUB ">>, Subject, <<" ">>, BinMaxMsg, <<"\r\n">>];
 
-encode({msg, {Subject, Sid, ReplyTo, Bytes}, Payload}) ->
-    Params = case ReplyTo of
-        undefined -> [Subject, Sid, integer_to_binary(Bytes)];
-        _ -> [Subject, Sid, ReplyTo, integer_to_binary(Bytes)]
-    end,
-    encode(msg, Params, Payload).
+encode({msg, {Subject, Sid, undefined, Payload}}) ->
+    BinPS = integer_to_binary(iolist_size(Payload)),
+    [<<"MSG ">>, Subject, <<" ">>, Sid, <<" ">>, BinPS, <<"\r\n">>,
+      Payload, <<"\r\n">>];
 
--spec encode(Name :: atom() | binary(),
-              Params :: [binary()],
-              Payload :: binary()) ->
-    Message :: binary().
+encode({msg, {Subject, Sid, ReplyTo, Payload}}) ->
+    BinPS = integer_to_binary(iolist_size(Payload)),
+    [<<"MSG ">>, Subject, <<" ">>, Sid, <<" ">>, ReplyTo, <<" ">>, BinPS, <<"\r\n">>,
+      Payload, <<"\r\n">>].
 
-encode(Name, Params, Payload) when is_atom(Name) ->
-    encode(name_to_bin(Name), Params, Payload);
-
-encode(Name, Params, Payload) ->
-    Encoded = encode_message(Name, Params, Payload),
-    iolist_to_binary(Encoded).
 
 % == Decode API
 
 -spec decode(Binary :: binary()) ->
-    {Messages :: [term()], Remaining :: binary()}.
+    term().
 
-decode(Binary) ->
-    {Messages, Rem} = extract_line(Binary, undefined, [], undefined),
-    {lists:reverse(Messages), Rem}.
+decode(<<>>) -> <<>>;
+decode(<<"+OK\r\n", Rest/binary>>) -> {ok, Rest};
+decode(<<"PING\r\n", Rest/binary>>) -> {ping, Rest};
+decode(<<"PONG\r\n", Rest/binary>>) -> {pong, Rest};
+decode(<<"-ERR 'Unknown Protocol Operation'\r\n", Rest/binary>>) -> {{error, unknown_operation}, Rest};
+decode(<<"-ERR 'Authorization Violation'\r\n", Rest/binary>>) -> {{error, auth_violation}, Rest};
+decode(<<"-ERR 'Authorization Timeout'\r\n", Rest/binary>>) -> {{error, auth_timeout}, Rest};
+decode(<<"-ERR 'Parser Error'\r\n", Rest/binary>>) -> {{error, parser_error}, Rest};
+decode(<<"-ERR 'Stale Connection'\r\n", Rest/binary>>) -> {{error, stale_connection}, Rest};
+decode(<<"-ERR 'Slow Consumer'\r\n", Rest/binary>>) -> {{error, slow_consumer}, Rest};
+decode(<<"-ERR 'Maximum Payload Exceeded'\r\n", Rest/binary>>) -> {{error, max_payload}, Rest};
+decode(<<"-ERR 'Invalid Subject'\r\n", Rest/binary>>) -> {{error, invalid_subject}, Rest};
+decode(<<"MSG ", Rest/binary>> = OrigMsg) -> decode_slow(msg, OrigMsg, Rest);
+decode(<<"PUB ", Rest/binary>> = OrigMsg) -> decode_slow(pub, OrigMsg, Rest);
+decode(<<"SUB ", Rest/binary>> = OrigMsg) -> decode_slow(sub, OrigMsg, Rest);
+decode(<<"UNSUB ", Rest/binary>> = OrigMsg) -> decode_slow(unsub, OrigMsg, Rest);
+decode(<<"CONNECT ", Rest/binary>> = OrigMsg) -> decode_slow(connect, OrigMsg, Rest);
+decode(<<"INFO ", Rest/binary>> = OrigMsg) -> decode_slow(info, OrigMsg, Rest);
+decode(_) -> throw(parse_error).
 
-%% == Internal
+%% == Internal - decode
 
-name_to_bin(info) -> <<"INFO">>;
-name_to_bin(connect) -> <<"CONNECT">>;
-name_to_bin(pub) -> <<"PUB">>;
-name_to_bin(sub) -> <<"SUB">>;
-name_to_bin(unsub) -> <<"UNSUB">>;
-name_to_bin(msg) -> <<"MSG">>;
-name_to_bin(ping) -> <<"PING">>;
-name_to_bin(pong) -> <<"PONG">>;
-name_to_bin(ok) -> <<"+OK">>;
-name_to_bin(err) -> <<"-ERR">>.
+decode_slow(connect, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
+        false -> {[], OrigMsg};
+        {Flip, Rest} -> {{connect, Flip}, Rest}
+    end;
 
-encode_message(Name, Params, Payload) ->
-    R1 = [Name],
-    RevParams = lists:reverse(Params),
-    R2 = case RevParams of
-        [] -> R1;
-        [H | Rest] ->
-            F = fun(P, Acc) -> [P, ?SEP | Acc] end,
-            [lists:foldl(F, [H], Rest), ?SEP | R1]
-    end,
-    R3 = case Payload of
-        undefined ->
-            R2;
-        <<>> ->
-            [?NL | R2];
-        _ ->
-            [Payload, ?NL | R2]
-    end,
-    lists:reverse([?NL | R3]).
+decode_slow(info, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
+        false -> {[], OrigMsg};
+        {Flip, Rest} -> {{info, Flip}, Rest}
+    end;
 
-extract_line(Bin, undefined, MsgAcc, _) ->
-    case binary:match(Bin, ?NL) of
-        nomatch ->
-            {MsgAcc, Bin};
-        {Pos, Len} ->
-            Line = binary:part(Bin, {0, Pos}),
-            Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
-            {NewMsgAcc, NewPayloadSize, Hold} = extract_msg(Line, MsgAcc),
-            case Hold of
+decode_slow(msg, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
+        false ->
+            {[], OrigMsg};
+        {Flip, Rest} ->
+            {Subject, Sid, ReplyTo, PS} = parse_msg_flip(Flip),
+            case byte_size(Rest) >= PS + 2 of
                 true ->
-                    extract_line(Rest, NewPayloadSize, NewMsgAcc, <<Line/binary, ?NL/binary>>);
+                    {Payload, NewRest} = extract_line(Rest, PS),
+                    {{msg, {Subject, Sid, ReplyTo, Payload}}, NewRest};
                 _ ->
-                    extract_line(Rest, NewPayloadSize, NewMsgAcc, undefined)
+                    {[], OrigMsg}
             end
     end;
 
-extract_line(Bin, PayloadSize, [{Name, Params, _} | RestMsg], BinHold) ->
-    BinSize = byte_size(Bin),
-    NextBin = PayloadSize + 2,
-    case BinSize >= NextBin of
-        true ->
-            Payload = binary:part(Bin, {0, PayloadSize}),
-            Msg = {Name, Params, Payload},
-            NewBin = binary:part(Bin, {NextBin, BinSize - NextBin}),
-            extract_line(NewBin, undefined, [Msg | RestMsg], <<>>);
+decode_slow(pub, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
         false ->
-            % Input ended without the payload of the last msg completed.
-            % Remove that message from the result, and prepend it to the
-            % remaining result.
-            {RestMsg, <<BinHold/binary, Bin/binary>>}
+            {[], OrigMsg};
+        {Flip, Rest} ->
+            {Subject, ReplyTo, PS} = parse_pub_flip(Flip),
+            case byte_size(Rest) >= PS + 2 of
+                true ->
+                    {Payload, NewRest} = extract_line(Rest, PS),
+                    {{pub, {Subject, ReplyTo, Payload}}, NewRest};
+                _ ->
+                    {[], OrigMsg}
+            end
+    end;
+
+decode_slow(sub, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
+        false ->
+            {[], OrigMsg};
+        {Flip, Rest} ->
+            {{sub, parse_sub_flip(Flip)}, Rest}
+    end;
+
+decode_slow(unsub, OrigMsg, Bin) ->
+    case extract_flip(Bin) of
+        false ->
+            {[], OrigMsg};
+        {Flip, Rest} ->
+            {{unsub, parse_unsub_flip(Flip)}, Rest}
     end.
 
-extract_msg(Bin, MsgAcc) ->
-    {Msg, PayloadSize, Hold} = split_msg(Bin),
-    {[Msg | MsgAcc], PayloadSize, Hold}.
+extract_flip(Bin) ->
+    case binary:match(Bin, get(nats_msg@nl)) of
+        nomatch -> false;
+        {Pos, _Len} -> extract_line(Bin, Pos)
+    end.
 
+extract_line(Bin, Len) ->
+    <<Ret:Len/binary, "\r\n", Rest/binary>> = Bin,
+    {Ret, Rest}.
 
-split_msg(Bin) ->
-    Ret = case binary:match(Bin, ?SEPLIST) of
-        nomatch ->
-            make_msg(bin_to_name(upper_case(Bin)), <<>>);
-        {Pos, Len} ->
-            Name = bin_to_name(upper_case(binary:part(Bin, {0, Pos}))),
-            Rest = binary:part(Bin, {Pos + Len, byte_size(Bin) - (Pos + Len)}),
-            make_msg(Name, Rest)
-    end,
-    case Ret of
-        {_, _, _} ->
-            Ret;
+parse_msg_flip(Flip) ->
+     case binary:split(Flip, get(nats_msg@sep), [global]) of
+        [Subject, Sid, BinBytes] ->
+            {Subject, Sid, undefined, binary_to_integer(BinBytes)};
+        [Subject, Sid, ReplyTo, BinBytes] ->
+            {Subject, Sid, ReplyTo, binary_to_integer(BinBytes)};
         _ ->
-            {Ret, undefined, false}
+            throw(parse_error)
     end.
 
-make_msg(ping, _) -> ping;
-make_msg(pong, _) -> pong;
-make_msg(ok, _) -> ok;
+parse_pub_flip(Flip) ->
+    case binary:split(Flip, get(nats_msg@sep), [global]) of
+        [Subject, BinBytes] ->
+            {Subject, undefined, binary_to_integer(BinBytes)};
+        [Subject, ReplyTo, BinBytes] ->
+            {Subject, ReplyTo, binary_to_integer(BinBytes)};
+        _ ->
+            throw(parse_error)
+    end.
 
-make_msg(info, Rest) ->
-    {info, Rest};
-
-make_msg(connect, Rest) ->
-    {connect, Rest};
-
-make_msg(err, Rest) ->
-    % TODO: handle spaces
-    {err, err_to_atom(Rest)};
-
-make_msg(sub, Rest) ->
-    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+parse_sub_flip(Flip) ->
+    case binary:split(Flip, get(nats_msg@sep), [global]) of
         [Subject, Sid] ->
             {Subject, undefined, Sid};
         [Subject, QueueGrp, Sid] ->
-            {Subject, QueueGrp, Sid}
-    end,
-    {sub, Params};
+            {Subject, QueueGrp, Sid};
+        _ ->
+            throw(parse_error)
+    end.
 
-make_msg(pub, Rest) ->
-    {Params, PayloadSize} = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
-        [Subject, BinBytes] ->
-            PS = binary_to_integer(BinBytes),
-            {{Subject, undefined, PS}, PS};
-        [Subject, ReplyTo, BinBytes] ->
-            PS = binary_to_integer(BinBytes),
-            {{Subject, ReplyTo, PS}, PS}
-    end,
-    {{pub, Params, <<>>}, PayloadSize, true};
-
-make_msg(msg, Rest) ->
-    {Params, PayloadSize} = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
-        [Subject, Sid, BinBytes] ->
-            PS = binary_to_integer(BinBytes),
-            {{Subject, Sid, undefined, PS}, PS};
-        [Subject, Sid, ReplyTo, BinBytes] ->
-            PS = binary_to_integer(BinBytes),
-            {{Subject, Sid, ReplyTo, PS}, PS}
-    end,
-    {{msg, Params, <<>>}, PayloadSize, true};
-
-make_msg(unsub, Rest) ->
-    Params = case binary:split(Rest, ?SEPLIST, [global, trim_all]) of
+parse_unsub_flip(Flip) ->
+    case binary:split(Flip, get(nats_msg@sep), [global]) of
         [Subject] ->
             {Subject, undefined};
         [Subject, BinMaxMsg] ->
-            {Subject, binary_to_integer(BinMaxMsg)}
-    end,
-    {unsub, Params}.
+            {Subject, binary_to_integer(BinMaxMsg)};
+        _ ->
+            throw(parse_error)
+    end.
 
-
-bin_to_name(<<"INFO">>) -> info;
-bin_to_name(<<"CONNECT">>) -> connect;
-bin_to_name(<<"PUB">>) -> pub;
-bin_to_name(<<"SUB">>) -> sub;
-bin_to_name(<<"UNSUB">>) -> unsub;
-bin_to_name(<<"MSG">>) -> msg;
-bin_to_name(<<"PING">>) -> ping;
-bin_to_name(<<"PONG">>) -> pong;
-bin_to_name(<<"+OK">>) -> ok;
-bin_to_name(<<"-ERR">>) -> err.
-
-err_to_atom(<<"'Unknown Protocol Operation'">>) -> unknown_operation;
-err_to_atom(<<"'Authorization Violation'">>) -> auth_violation;
-err_to_atom(<<"'Authorization Timeout'">>) -> auth_timeout;
-err_to_atom(<<"'Parser Error'">>) -> parser_error;
-err_to_atom(<<"'Stale Connection'">>) -> stale_connection;
-err_to_atom(<<"'Slow Consumer'">>) -> slow_consumer;
-err_to_atom(<<"'Maximum Payload Exceeded'">>) -> max_payload;
-err_to_atom(<<"'Invalid Subject'">>) -> invalid_subject;
-err_to_atom(_) -> unknown_error.
-
-upper_case(Bin) ->
-    list_to_binary(string:to_upper(binary_to_list(Bin))).
+% upper_case(Bin) ->
+%     list_to_binary(string:to_upper(binary_to_list(Bin))).
 
 %% == Tests
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+setup() ->
+    io:format("setup called"),
+    nats_msg:init().
 
 %% == Encode Tests
 
@@ -362,176 +313,144 @@ err_test() ->
     ?assertEqual(E, R).
 
 info_test() ->
-    R = info(<<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>),
+    R = iolist_to_binary(info(<<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>)),
     E = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
     ?assertEqual(E, R).
 
 connect_test() ->
-    R = connect(<<"{\"name\":\"sample-client\",\"verbose\":true}">>),
+    R = iolist_to_binary(connect(<<"{\"name\":\"sample-client\",\"verbose\":true}">>)),
     E = <<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>,
     ?assertEqual(E, R).
 
 pub_1_test() ->
-    R = pub(<<"NOTIFY">>),
+    R = iolist_to_binary(pub(<<"NOTIFY">>)),
     E = <<"PUB NOTIFY 0\r\n\r\n">>,
     ?assertEqual(E, R).
 
-pub_3_test() ->
-    R = pub(<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"Knock Knock">>),
+pub_2_test() ->
+    R = iolist_to_binary(pub(<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"Knock Knock">>)),
     E = <<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>,
     ?assertEqual(E, R).
 
-sub_2_test() ->
-    R = sub(<<"FOO">>, <<"1">>),
+sub_1_test() ->
+    R = iolist_to_binary(sub(<<"FOO">>, <<"1">>)),
     E = <<"SUB FOO 1\r\n">>,
     ?assertEqual(E, R).
 
-sub_3_test() ->
-    R = sub(<<"BAR">>, <<"G1">>, <<"44">>),
+sub_2_test() ->
+    R = iolist_to_binary(sub(<<"BAR">>, <<"G1">>, <<"44">>)),
     E = <<"SUB BAR G1 44\r\n">>,
     ?assertEqual(E, R).
 
 unsub_1_test() ->
-    R = unsub(<<"1">>),
+    R = iolist_to_binary(unsub(<<"1">>)),
     E = <<"UNSUB 1\r\n">>,
     ?assertEqual(E, R).
 
 unsub_2_test() ->
-    R = unsub(<<"1">>, 10),
+    R = iolist_to_binary(unsub(<<"1">>, 10)),
     E = <<"UNSUB 1 10\r\n">>,
     ?assertEqual(E, R).
 
 msg_4_test() ->
-    R = msg(<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, <<"Hello, World!">>),
+    R = iolist_to_binary(msg(<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, <<"Hello, World!">>)),
     E = <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>,
     ?assertEqual(E, R).
 
 %% == Decode Tests
 
 dec_ping_test() ->
-    {[R], _} = decode(<<"PING\r\n">>),
-    ?assertEqual(ping, R).
-
-dec_ping_spaces_test() ->
-    {[R], _} = decode(<<"PING     \t    \r\n">>),
-    ?assertEqual(ping, R).
+    {ping, <<>>} = decode(<<"PING\r\n">>).
 
 dec_pong_test() ->
-    {[R], _} = decode(<<"PONG\r\n">>),
-    ?assertEqual(pong, R).
+    {pong, <<>>} = decode(<<"PONG\r\n">>).
 
 dec_ok_test() ->
-    {[R], _} = decode(<<"+OK\r\n">>),
-    ?assertEqual(ok, R).
+    {ok, <<>>} = decode(<<"+OK\r\n">>).
 
 dec_err_test() ->
-    {[R], _} = decode(<<"-ERR 'Authorization Timeout'\r\n">>),
-    E = {err, auth_timeout},
+    R = decode(<<"-ERR 'Authorization Timeout'\r\n">>),
+    E = {{error, auth_timeout}, <<>>},
     ?assertEqual(E, R).
 
 dec_info_test() ->
-    {[R], _} = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
-    E = {info, <<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>},
-    ?assertEqual(E, R).
+    setup(),
+    {{info, Info}, <<>>} = decode(<<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>),
+    Info = <<"{\"auth_required\":true,\"server_id\":\"0001-SERVER\"}">>.
 
 dec_connect_test() ->
-    {[R], _} = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
-    E = {connect, <<"{\"name\":\"sample-client\",\"verbose\":true}">>},
+    setup(),
+    R = decode(<<"CONNECT {\"name\":\"sample-client\",\"verbose\":true}\r\n">>),
+    E = {{connect, <<"{\"name\":\"sample-client\",\"verbose\":true}">>}, <<>>},
     ?assertEqual(E, R).
 
 dec_pub_1_test() ->
-    {[R], _} = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
-    E = {pub, {<<"NOTIFY">>, undefined, 0}, <<>>},
+    R = decode(<<"PUB NOTIFY 0\r\n\r\n">>),
+    E = {{pub, {<<"NOTIFY">>, undefined, <<>>}}, <<>>},
     ?assertEqual(E, R).
 
 dec_pub_2_test() ->
-    {[R], _} = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
-    E = {pub, {<<"FOO">>, undefined, 11}, <<"Hello NATS!">>},
+    R = decode(<<"PUB FOO 11\r\nHello NATS!\r\n">>),
+    E = {{pub, {<<"FOO">>, undefined, <<"Hello NATS!">>}}, <<>>},
     ?assertEqual(E, R).
 
 dec_pub_3_test() ->
-    {[R], _} = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
-    E = {pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, 11}, <<"Knock Knock">>},
+    R = decode(<<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>),
+    E = {{pub, {<<"FRONT.DOOR">>, <<"INBOX.22">>, <<"Knock Knock">>}}, <<>>},
+    ?assertEqual(E, R).
+
+dec_sub_1_test() ->
+    R = decode(<<"SUB FOO 1\r\n">>),
+    E = {{sub, {<<"FOO">>, undefined, <<"1">>}}, <<>>},
     ?assertEqual(E, R).
 
 dec_sub_2_test() ->
-    {[R], _} = decode(<<"SUB FOO 1\r\n">>),
-    E = {sub, {<<"FOO">>, undefined, <<"1">>}},
-    ?assertEqual(E, R).
-
-dec_sub_3_test() ->
-    {[R], _} = decode(<<"SUB BAR G1 44\r\n">>),
-    E = {sub,{<<"BAR">>,<<"G1">>,<<"44">>}},
+    R = decode(<<"SUB BAR G1 44\r\n">>),
+    E = {{sub,{<<"BAR">>,<<"G1">>,<<"44">>}}, <<>>},
     ?assertEqual(E, R).
 
 dec_unsub_1_test() ->
-    {[R], _} = decode(<<"UNSUB 1\r\n">>),
-    E = {unsub, {<<"1">>, undefined}},
+    R = decode(<<"UNSUB 1\r\n">>),
+    E = {{unsub, {<<"1">>, undefined}}, <<>>},
     ?assertEqual(E, R).
 
 dec_unsub_2_test() ->
-    {[R], _} = decode(<<"UNSUB 1 10\r\n">>),
-    E = {unsub, {<<"1">>, 10}},
+    R = decode(<<"UNSUB 1 10\r\n">>),
+    E = {{unsub, {<<"1">>, 10}}, <<>>},
     ?assertEqual(E, R).
 
-dec_msg_3_test() ->
-    {[R], _} = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
-    E = {msg, {<<"FOO.BAR">>, <<"9">>, undefined, 13}, <<"Hello, World!">>},
+dec_msg_1_test() ->
+    R = decode(<<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>),
+    E = {{msg, {<<"FOO.BAR">>, <<"9">>, undefined, <<"Hello, World!">>}}, <<>>},
     ?assertEqual(E, R).
 
-dec_msg_4_test() ->
-    {[R], _} = decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
-    E = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
+dec_msg_2_test() ->
+    R = decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    E = {{msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, <<"Hello, World!">>}}, <<>>},
     ?assertEqual(E, R).
 
 dec_many_lines_test() ->
-    {[R1, R2], _} = decode(<<"PING\r\nMSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
-    E1 = ping,
-    ?assertEqual(E1, R1),
-    E2 = {msg, {<<"FOO.BAR">>, <<"9">>, <<"INBOX.34">>, 13}, <<"Hello, World!">>},
-    ?assertEqual(E2, R2).
-
-dec_remaining_test() ->
-    B = <<"SUB DEVICE.cikbsij2b0000m37h05a7m5oe.OUT 2\r\nSUB DEVICE.cikbsij2d0001m37h2u271jic.OUT 3\r\nSUB DEVICE.cikbsij2e0002m3">>,
-    {Msgs, Rem} = decode(B),
-    ?assertEqual(2, length(Msgs)),
-    ?assertEqual(<<"SUB DEVICE.cikbsij2e0002m3">>, Rem).
+    R = decode(<<"PING\r\nMSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>),
+    E = {ping, <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>},
+    ?assertEqual(E, R).
 
 dec_nl_in_payload_test() ->
-    B = <<"PUB FOO 12\r\nHello\r\nNATS!\r\n">>,
-    {[M], Rem} = decode(B),
-    E = {pub, {<<"FOO">>, undefined, 12}, <<"Hello\r\nNATS!">>},
-    ?assertEqual(E, M),
-    ?assertEqual(Rem, <<>>).
+    R = decode(<<"PUB FOO 12\r\nHello\r\nNATS!\r\n">>),
+    E = {{pub, {<<"FOO">>, undefined, <<"Hello\r\nNATS!">>}}, <<>>},
+    ?assertEqual(E, R).
 
 dec_incomplete_payload_test() ->
-    B = <<"SUB BAR 3\r\nPUB FOO 12\r\nHello\r\nNATS!">>,
-    {Msgs, Rem} = decode(B),
-    ?assertEqual(1, length(Msgs)),
-    E1 = {sub, {<<"BAR">>, undefined, <<"3">>}},
-    ?assertEqual(E1, hd(Msgs)),
-    E2 = <<"PUB FOO 12\r\nHello\r\nNATS!">>,
-    ?assertEqual(E2, Rem).
+    R = decode(<<"PUB FOO 12\r\nHello\r\nNATS!">>),
+    E = {[], <<"PUB FOO 12\r\nHello\r\nNATS!">>},
+    ?assertEqual(E, R).
 
-dec_case_insensitive_op_name_1_test() ->
-    {[R1], _} = decode(<<"PING\r\n">>),
-    {[R2], _} = decode(<<"PinG\r\n">>),
-    ?assertEqual(ping, R1),
-    ?assertEqual(ping, R2).
-
-dec_case_insensitive_op_name_2_test() ->
-    {[{R1, _}], _} = decode(<<"SUB FOO 1\r\n">>),
-    {[{R2, _}], _} = decode(<<"sub FOO 1\r\n">>),
-    ?assertEqual(sub, R1),
-    ?assertEqual(sub, R2).
-
-% == Other Tests
+% % == Other Tests
 
 decode_encode_1_test() ->
     E = <<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>,
-    {[R1], _} = decode(E),
+    {R1, _} = decode(E),
     io:format("R1: ~p~n", [R1]),
-    R2 = encode(R1),
+    R2 = iolist_to_binary(encode(R1)),
     ?assertEqual(E, R2).
 
 -endif.

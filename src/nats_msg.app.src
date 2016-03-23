@@ -1,6 +1,6 @@
 {application, 'nats_msg',
  [{description, "Pure Erlang NATS Protocol Message Encoder/Decoder"},
-  {vsn, "0.3.3"},
+  {vsn, "0.4.0"},
   {registered, []},
   {applications,
    [kernel,
@@ -8,7 +8,6 @@
    ]},
   {env,[]},
   {modules, []},
-
   {maintainers, ["Yuce Tekol"]},
   {licenses, ["MIT"]},
   {links, [{"Github", "https://github.com/yuce/nats_msg"}]}
