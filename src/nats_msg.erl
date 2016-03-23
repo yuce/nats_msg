@@ -35,7 +35,6 @@
 
 -export([init/0,
          encode/1,
-        %  encode/3,
          decode/1]).
 
 -export([ping/0,
@@ -53,11 +52,39 @@
          msg/2,
          msg/4]).
 
-% -on_load(init/0).
-
 -define(SEP, <<" ">>).
 -define(NL, <<"\r\n">>).
 -define(SEPLIST, [<<" ">>, <<"\t">>]).
+
+-type error_param() :: {error, unknown_operation} |
+                       {error, auth_violation} |
+                       {error, auth_timeout} |
+                       {error, parser_error} |
+                       {error, stale_connection} |
+                       {error, slow_consumer} |
+                       {error, max_payload} |
+                       {error, invalid_subject}.
+
+-type pub_param() :: {pub, {Subject :: iodata(),
+                            ReplyTo :: iodata() | undefined,
+                            Payload :: iodata()}}.
+
+-type sub_param() :: {sub, {Subject :: iodata(),
+                            QueueGrp :: iodata() | undefined,
+                            Sid :: iodata()}}.
+
+-type unsub_param() :: {unsub, {Sid :: iodata(),
+                                MaxMsg :: integer() | undefined}}.
+
+-type msg_param() :: {msg, {Subject :: iodata(),
+                            Sid :: iodata(),
+                            ReplyTo :: iodata() | undefined,
+                            Payload :: iodata()}}.
+
+-type encode_param() :: ping | pong | ok | error |
+                        {info, iodata()} | {connect, iodata()} |
+                        error_param() |
+                        pub_param() | sub_param() | unsub_param() | msg_param().
 
 %% == API
 
@@ -94,6 +121,8 @@ msg(Subject, Sid) ->
     encode({msg, {Subject, Sid, undefined, <<>>}}).
 msg(Subject, Sid, ReplyTo, Payload) ->
     encode({msg, {Subject, Sid, ReplyTo, Payload}}).
+
+-spec encode(Param :: encode_param()) -> iolist().
 
 encode(ping) -> <<"PING\r\n">>;
 encode(pong) -> <<"PONG\r\n">>;
@@ -142,11 +171,13 @@ encode({msg, {Subject, Sid, ReplyTo, Payload}}) ->
     [<<"MSG ">>, Subject, <<" ">>, Sid, <<" ">>, ReplyTo, <<" ">>, BinPS, <<"\r\n">>,
       Payload, <<"\r\n">>].
 
-
 % == Decode API
 
--spec decode(Binary :: binary()) ->
-    term().
+-spec decode(Param :: iodata()) ->
+    {term(), binary()}.
+
+decode(L) when is_list(L) ->
+    decode(iolist_to_binary(L));
 
 decode(<<>>) -> <<>>;
 decode(<<"+OK\r\n", Rest/binary>>) -> {ok, Rest};

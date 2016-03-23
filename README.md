@@ -8,8 +8,19 @@ For details about NATS protocol, see:
 have any dependency other than Erlang/OTP (16+ *should* be OK) and optionally
 [rebar3](http://www.rebar3.org/).
 
-## Install
+## News
 
+* **Version 0.4.0** (*2016-03-23*):
+    * This version is incompatible with previous versions of the library
+    * Decoding is lazy, in the sense that, only a single message is decoded whenever
+    the decode is called
+    * HUGE performance improvements (2x - 100x)
+    * The parser is much more stricter now
+    * Encoding functions return iodata instead of binary
+    * You can use iodata anywhere a binary is expected
+
+
+## Install
 
 **nats_msg** uses [rebar3](http://www.rebar3.org/) to build and tests and
 it is available on [hex.pm](https://hex.pm/). Just include the following
@@ -18,15 +29,6 @@ in your `rebar.config`:
 ```erlang
 {deps, [nats_msg]}.
 ```
-
-Alternatively (*for whatever reason you don't like to use hex.pm*):
-
-```erlang
-{deps, [
-    {nat_msg, {git, "https://github.com/yuce/nats_msg.git", {branch, "master"}}.
-```
-
-Or, you can just copy `src/nats_msg.erl` to your project to use it.
 
 ## Tests
 
@@ -40,7 +42,11 @@ Run the tests using:
 
 ## Usage
 
-Binaries are used exclusively throughout the library.
+> IMPORTANT!
+>
+> Before running any decoding functions, `nats_msg:init/0` must be called once.
+
+Binaries and iodata are used exclusively throughout the library.
 
 Currently, no error handling is performed during encoding/decoding. You can protect
 against crashes by wrapping library functions between `try...catch`.
@@ -52,15 +58,15 @@ to deal with JSON. See the **INFO** and **CONNECT** sections in this document fo
 
 ### Encoding
 
-Encoding a message produces a binary. `nats_msg:encode/1` takes an atom as the name of the
+Encoding a message produces an IO list. `nats_msg:encode/1` takes an atom as the name of the
 message or a tuple which contains the name, parameters and payload of the message.
 
 The general form of `nats_msg:encode/1` parameters is:
 
 * `Name :: atom()`: For messages taking no parameters,
-* `{Name :: atom(), Parameters :: {binary() | int(), ...}}` for messages taking parameters but
+* `{Name :: atom(), Parameters :: {iodata() | int(), ...}}` for messages taking parameters but
 not a payload,
-* `{Name :: atom(), Parameters :: {binary() | int(), ...}, Payload :: binary()}` for messages
+* `{Name :: atom(), Parameters :: {iodata() | int(), ...}, Payload :: iodata()}` for messages
 taking parameters and a payload.
 
 Messages of the same type always have the same structure, even if some of the values are
@@ -78,35 +84,21 @@ discussed later in this document.
 
 ### Decoding
 
-Decoding a binary produces a `{Messages, RemainingBinary}` tuple.
-`Messages` is a list of messages and `RemainingBinary` is the part of the input which
+Decoding a binary/iodata produces a `{Message, RemainingBinary}` tuple.
+`Message` is either `[]` if the data is not sufficient to decode the message, or the a term for the message,
+and `RemainingBinary` is the part of the input which
 wasn't decoded and returned. The latter is very useful when dealing with streams, where
 the input is chunked and appending chunks is required to be able to decode messages.
 In those situations, just prepend `RemainingBinary` to the next binary chunk before attempting
 to decode it.
 
-Messages in the `Messages` list can be used as inputs to `nats_msg:encode`, like:
+The `Message`  be used as an input to `nats_msg:encode`, like:
 
 ```erlang
 SomeBinary = ...
-{[Msg], Remaining} = nats_msg:decode(SomeBinary),
+{Msg, Remaining} = nats_msg:decode(SomeBinary),
 ReEncodedBinary = nats_msg:encode(Msg),
 % ReEncodedBinary = SomeBinary
-```
-
-Note that in this document, the message extraction code is written like the following for
-convenience:
-
-```erlang
-{[Msg], Remaining} = nats_msg:decode(SomeBinary),
-```
-
-That will work if there is only 1 decodable message in the input, and will cause a crash
-if there are more. The correct way of handling messages is:
-
-```erlang
-{Messages, Remaining} = nats_msg:decode(SomeBinary),
-% Operate on Messages
 ```
 
 ### INFO Message
@@ -125,7 +117,7 @@ BinaryMsg = nats_msg:info(BinaryInfo).
 
 ```erlang
 Chunk = <<"INFO {\"auth_required\":true,\"server_id\":\"0001-SERVER\"}\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
+{Msg, _} = nats_msg:decode(Chunk),
 {info, BinaryInfo} = Msg,
 ServerInfo = jsx:decode(BinaryInfo, [return_maps]).
 ```
@@ -146,7 +138,7 @@ BinaryMsg = nats_msg:connect(BinaryInfo).
 
 ```erlang
 Chunk = <<"CONNECT {\"verbose\":true,\"name\":\"the_client\"}\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
+{Msg, _} = nats_msg:decode(Chunk),
 {connect, BinaryInfo} = Msg,
 ClientInfo = jsx:decode(BinaryInfo, [return_maps]).
 ```
@@ -181,11 +173,10 @@ Publish notification:
 
 ```erlang
 Chunk = <<"PUB NOTIFY 0\r\n\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
-{pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
+{Msg, _} = nats_msg:decode(Chunk),
+{pub, {Subject, ReplyTo, Payload}} = Msg,
 % Subject = <<"NOTIFY">>,
 % ReplyTo = undefined,
-% PayloadSize = 0,
 % Payload = <<>>.
 ```
 
@@ -193,11 +184,10 @@ Publish message with subject, replier and payload:
 
 ```erlang
 Chunk = <<"PUB FRONT.DOOR INBOX.22 11\r\nKnock Knock\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
-{pub, {Subject, ReplyTo, PayloadSize}, Payload} = Msg,
+{Msg, _} = nats_msg:decode(Chunk),
+{pub, {Subject, ReplyTo, Payload}} = Msg,
 % Subject = <<"FRONT.DOOR">>,
 % ReplyTo = <<"INBOX.22">>,
-% PayloadSize = 11,
 % Payload = <<"Knock Knock">>.
 ```
 
@@ -223,7 +213,7 @@ BinaryMsg = nats_msg:sub(<<"BAR">>, <<"G1">>, <<"44">>)
 
 ```erlang
 Chunk = <<"SUB FOO 1\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
+{Msg, _} = nats_msg:decode(Chunk),
 {sub, {Subject, GroupQueue, Sid}} = Msg,
 % Subject = <<"FOO">>,
 % GroupQueue = undefined,
@@ -252,7 +242,7 @@ BinaryMsg = nats_msg:unsub(<<"1">>, 10).
 
 ```erlang
 Chunk = <<"UNSUB 1 10\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
+{Msg, _} = nats_msg:decode(Chunk),
 {unsub, {Sid, MaxMessages}} = Msg,
 % Sid = <<"1">>,
 % MaxMessages = 10
@@ -288,8 +278,8 @@ Message with subject, sid and payload:
 
 ```erlang
 Chunk = <<"MSG FOO.BAR 9 13\r\nHello, World!\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
-{msg, {Subject, Sid, ReplyTo, 13}, Payload} = Msg,
+{Msg, _} = nats_msg:decode(Chunk),
+{msg, {Subject, Sid, ReplyTo, Payload}} = Msg,
 % Subject = <<"FOO.BAR">>,
 % Sid = <<"9">>,
 % ReplyTo = undefined,
@@ -309,7 +299,7 @@ BinaryMsg = nats_msg:ping().
 #### Decode
 
 ```erlang
-{[Msg], _} = nats_msg:decode(<<"PING\r\n">>),
+{Msg, _} = nats_msg:decode(<<"PING\r\n">>),
 % Msg = ping
 ```
 
@@ -326,7 +316,7 @@ BinaryMsg = nats_msg:pong().
 #### Decode
 
 ```erlang
-{[Msg], _} = nats_msg:decode(<<"PONG\r\n">>),
+{Msg, _} = nats_msg:decode(<<"PONG\r\n">>),
 % Msg = pong
 ```
 
@@ -343,7 +333,7 @@ BinaryMsg = nats_msg:ok().
 #### Decode
 
 ```erlang
-{[Msg], _} = nats_msg:decode(<<"+OK\r\n">>),
+{Msg, _} = nats_msg:decode(<<"+OK\r\n">>),
 % Msg = ok
 ```
 
@@ -374,13 +364,14 @@ BinaryMsg = nats_msg:err(auth_violation).
 
 ```erlang
 Chunk = <<"-ERR 'Authorization Timeout'\r\n">>,
-{[Msg], _} = nats_msg:decode(Chunk),
-{err, Error} = Msg,
+{Msg, _} = nats_msg:decode(Chunk),
+{ok, Error} = Msg,
 % Error = auth_timeout
 ```
 
 ## License
 
+```
 Copyright (c) 2016, Yuce Tekol <yucetekol@gmail.com>.
 All rights reserved.
 
@@ -410,3 +401,4 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
