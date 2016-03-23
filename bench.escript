@@ -10,6 +10,7 @@
 main([]) ->
     nats_msg:init(),
     Benchs = [{"decode +OK message 1m times", fun() -> decode_ok() end},
+              {"decode all +OK, PING message 1m times", fun() -> decode_all() end},
               {"decode CONNECT message 1m times", fun() -> decode_connect() end},
               {"decode MSG message 1m times", fun() -> decode_msg() end},
               {"encode +OK message 1m times", fun() -> encode_ok() end},
@@ -39,6 +40,12 @@ decode_connect() ->
 decode_msg() ->
     F = fun() ->
         nats_msg:decode(<<"MSG FOO.BAR 9 INBOX.34 13\r\nHello, World!\r\n">>)
+    end,
+    times(F, ?TIMES).
+
+decode_all() ->
+    F = fun() ->
+        nats_msg:decode_all(<<"+OK\r\nPING\r\nM">>)
     end,
     times(F, ?TIMES).
 

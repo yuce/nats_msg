@@ -35,7 +35,8 @@
 
 -export([init/0,
          encode/1,
-         decode/1]).
+         decode/1,
+         decode_all/1]).
 
 -export([ping/0,
          pong/0,
@@ -173,6 +174,10 @@ encode({msg, {Subject, Sid, ReplyTo, Payload}}) ->
 
 % == Decode API
 
+decode_all(Bin) ->
+    {RevMsgs, Rest} = decode_messages(Bin, []),
+    {lists:reverse(RevMsgs), Rest}.
+
 -spec decode(Param :: iodata()) ->
     {term(), binary()}.
 
@@ -197,9 +202,20 @@ decode(<<"SUB ", Rest/binary>> = OrigMsg) -> decode_slow(sub, OrigMsg, Rest);
 decode(<<"UNSUB ", Rest/binary>> = OrigMsg) -> decode_slow(unsub, OrigMsg, Rest);
 decode(<<"CONNECT ", Rest/binary>> = OrigMsg) -> decode_slow(connect, OrigMsg, Rest);
 decode(<<"INFO ", Rest/binary>> = OrigMsg) -> decode_slow(info, OrigMsg, Rest);
-decode(_) -> throw(parse_error).
+decode(Other) -> {[], Other}.
 
 %% == Internal - decode
+
+decode_messages(<<>>, Acc) ->
+    Acc;
+
+decode_messages(Bin, Acc) ->
+    case decode(Bin) of
+        {[], Rest} ->
+            {Acc, Rest};
+        {M, Rest} ->
+            decode_messages(Rest, [M | Acc])
+    end.
 
 decode_slow(connect, OrigMsg, Bin) ->
     case extract_flip(Bin) of
@@ -473,6 +489,11 @@ dec_nl_in_payload_test() ->
 dec_incomplete_payload_test() ->
     R = decode(<<"PUB FOO 12\r\nHello\r\nNATS!">>),
     E = {[], <<"PUB FOO 12\r\nHello\r\nNATS!">>},
+    ?assertEqual(E, R).
+
+dec_all_messages_test() ->
+    R = decode_all(<<"+OK\r\nPING\r\nM">>),
+    E = {[ok, ping], <<"M">>},
     ?assertEqual(E, R).
 
 % % == Other Tests

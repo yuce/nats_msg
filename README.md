@@ -10,14 +10,14 @@ have any dependency other than Erlang/OTP (16+ *should* be OK) and optionally
 
 ## News
 
-* **Version 0.4.0** (*2016-03-23*):
-    * This version is incompatible with previous versions of the library
+* **Version 0.4.1** (*2016-03-23*):
+    * This version is incompatible with previous versions of the library.
     * Decoding is lazy, in the sense that, only a single message is decoded whenever
-    the decode is called
-    * HUGE performance improvements (2x - 100x)
-    * The parser is much more stricter now
-    * Encoding functions return iodata instead of binary
-    * You can use iodata anywhere a binary is expected
+    the decode is called. You can use `nats_msg:decode_all/1` to simulate the old behaviour.
+    * HUGE performance improvements (2x - 100x).
+    * The parser is much more stricter now.
+    * Encoding functions return iodata instead of binary.
+    * You can use iodata anywhere a binary is expected.
 
 
 ## Install
